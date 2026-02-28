@@ -427,6 +427,13 @@ export class LogoRuntime {
       return { nextIndex: distance.nextIndex };
     }
 
+    if (cmd === 'ARC') {
+      const angle = await this.evaluateExpression(tokens, startIndex + 1);
+      const radius = await this.evaluateExpression(tokens, angle.nextIndex);
+      this.arc(angle.value, radius.value);
+      return { nextIndex: radius.nextIndex };
+    }
+
     if (cmd === 'RT' || cmd === 'RIGHT') {
       const angle = await this.evaluateExpression(tokens, startIndex + 1);
       this.turtle.angle += angle.value;
