@@ -170,6 +170,13 @@ export function analyzeSource(source: string): DiagnosticItem[] {
         }
       }
 
+      if (up === 'ARC') {
+        const arg2 = parts.length > 2 ? parts[2] : null;
+        if (!arg || !arg2) {
+          push(li, tokenStart, token.length, 'error', `${token.toUpperCase()} expects 2 arguments`);
+        }
+      }
+
       if (up === 'REPEAT') {
         // Expect at least a repeat count and a bracketed block
         if (!arg) {
