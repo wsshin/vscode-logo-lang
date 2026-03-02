@@ -1118,6 +1118,24 @@ export class LogoRuntime {
     return { value: 0, nextIndex: startIndex + 1 };
   }
 
+  private parseMakeVariableName(tokenValue: string): string {
+    if (!tokenValue.startsWith('"')) {
+      throw new Error('MAKE expects first argument to be a quoted variable name');
+    }
+
+    let varName = tokenValue.substring(1);
+    // Accept both Logo-style words ("name) and full quoted strings ("name")
+    if (varName.endsWith('"')) {
+      varName = varName.substring(0, varName.length - 1);
+    }
+
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(varName)) {
+      throw new Error('MAKE expects first argument to be a quoted variable name');
+    }
+
+    return varName;
+  }
+
   private async parseListArgument(
     tokens: Array<{ value: string; line: number }>,
     startIndex: number
