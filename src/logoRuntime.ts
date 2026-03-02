@@ -572,6 +572,24 @@ export class LogoRuntime {
       throw new StopException();
     }
 
+    // MAKE "name value
+    if (cmd === 'MAKE') {
+      const nameIndex = startIndex + 1;
+      if (nameIndex >= tokens.length || tokens[nameIndex].line !== token.line) {
+        throw new Error('MAKE expects first argument to be a quoted variable name');
+      }
+
+      const makeName = this.parseMakeVariableName(tokens[nameIndex].value);
+      const valueIndex = nameIndex + 1;
+      if (valueIndex >= tokens.length || tokens[valueIndex].line !== token.line) {
+        throw new Error('MAKE expects a value expression');
+      }
+
+      const result = await this.evaluateExpression(tokens, valueIndex);
+      this.variables.set(makeName, result.value);
+      return { nextIndex: result.nextIndex };
+    }
+
     // Assignment
     if (token.value.startsWith(':') && startIndex + 1 < tokens.length && tokens[startIndex + 1].value === '=') {
       const varName = token.value.substring(1); // Remove ':' prefix
