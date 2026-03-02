@@ -136,12 +136,15 @@ async function resolveLogoDocument(resource?: vscode.Uri): Promise<vscode.TextDo
 
 function showGraphicsPanel(context: vscode.ExtensionContext) {
   if (graphicsPanel) {
-    graphicsPanel.reveal(vscode.ViewColumn.Two);
+    graphicsPanel.reveal(vscode.ViewColumn.Two, true);
   } else {
     graphicsPanel = vscode.window.createWebviewPanel(
       'logoGraphics',
       'Logo Graphics',
-      vscode.ViewColumn.Two,
+      {
+        viewColumn: vscode.ViewColumn.Two,
+        preserveFocus: true
+      },
       {
         enableScripts: true,
         retainContextWhenHidden: true
