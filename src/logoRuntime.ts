@@ -1073,32 +1073,32 @@ export class LogoRuntime {
     tokens: Array<{ value: string; line: number }>,
     startIndex: number
   ): Promise<{ value: number; nextIndex: number }> {
-    // Parse primary (number or variable)
-    const primary = await this.parsePrimary(tokens, startIndex);
+    // Parse left-to-right so operators are left-associative.
+    let left = await this.parsePrimary(tokens, startIndex);
 
-    // Check for binary operator
-    if (primary.nextIndex < tokens.length) {
-      const op = tokens[primary.nextIndex].value;
-
-      if (['+', '-', '*', '/', '=', '<', '>'].includes(op)) {
-        const right = await this.parseExpression(tokens, primary.nextIndex + 1);
-
-        let result = 0;
-        switch (op) {
-          case '+': result = primary.value + right.value; break;
-          case '-': result = primary.value - right.value; break;
-          case '*': result = primary.value * right.value; break;
-          case '/': result = right.value !== 0 ? primary.value / right.value : 0; break;
-          case '=': result = primary.value === right.value ? 1 : 0; break;
-          case '<': result = primary.value < right.value ? 1 : 0; break;
-          case '>': result = primary.value > right.value ? 1 : 0; break;
-        }
-
-        return { value: result, nextIndex: right.nextIndex };
+    while (left.nextIndex < tokens.length) {
+      const op = tokens[left.nextIndex].value;
+      if (!['+', '-', '*', '/', '=', '<', '>'].includes(op)) {
+        break;
       }
+
+      const right = await this.parsePrimary(tokens, left.nextIndex + 1);
+
+      let result = 0;
+      switch (op) {
+        case '+': result = left.value + right.value; break;
+        case '-': result = left.value - right.value; break;
+        case '*': result = left.value * right.value; break;
+        case '/': result = right.value !== 0 ? left.value / right.value : 0; break;
+        case '=': result = left.value === right.value ? 1 : 0; break;
+        case '<': result = left.value < right.value ? 1 : 0; break;
+        case '>': result = left.value > right.value ? 1 : 0; break;
+      }
+
+      left = { value: result, nextIndex: right.nextIndex };
     }
 
-    return primary;
+    return left;
   }
 
   private async parsePrimary(
