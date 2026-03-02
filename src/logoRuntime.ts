@@ -43,7 +43,7 @@ export interface ExecutionState {
   turtle: TurtleState;
   variables: Map<string, number>;
   drawCommands: DrawCommand[];
-  callStack: Array<{ procedure: string; line: number; vars: Map<string, number> }>;  
+  callStack: Array<{ procedure: string; line: number; vars: Map<string, number> }>;
   currentLine: number;
   executionIndex: number;
 }
@@ -59,7 +59,7 @@ export class LogoRuntime {
     penColor: '#000000',
     visible: true
   };
-  
+
   private procedures: Map<string, LogoProcedure> = new Map();
   private variables: Map<string, number> = new Map();
   private callStack: Array<{ procedure: string; line: number; vars: Map<string, number> }> = [];
@@ -115,9 +115,9 @@ export class LogoRuntime {
   }
 
   public getCallStack(): Array<{ procedure: string; line: number }> {
-    return this.callStack.map(frame => ({ 
-      procedure: frame.procedure, 
-      line: frame.line 
+    return this.callStack.map(frame => ({
+      procedure: frame.procedure,
+      line: frame.line
     }));
   }
 
@@ -170,9 +170,9 @@ export class LogoRuntime {
       currentLine: this.currentLine,
       executionIndex: this.executionIndex
     };
-    
+
     this.executionHistory.push(state);
-    
+
     // Limit history size
     if (this.executionHistory.length > this.maxHistorySize) {
       this.executionHistory.shift();
@@ -197,7 +197,7 @@ export class LogoRuntime {
     // Check step mode
     if (this.stepMode === 'stepOver') {
       // Pause if we're at the same or shallower call stack depth AND on a different line
-      return this.callStack.length <= this.stepStartCallStackDepth && 
+      return this.callStack.length <= this.stepStartCallStackDepth &&
              this.currentLine !== this.lastSteppedLine;
     } else if (this.stepMode === 'stepIn') {
       // Always pause on next line (not on same line)
@@ -241,7 +241,7 @@ export class LogoRuntime {
 
     for (let lineNum = 0; lineNum < lines.length; lineNum++) {
       let line = lines[lineNum];
-      
+
       // Remove comments
       const commentIndex = line.indexOf(';');
       if (commentIndex !== -1) {
@@ -253,7 +253,7 @@ export class LogoRuntime {
 
       // First split on spaces, brackets, and parentheses
       const parts = line.match(/:[A-Za-z_][A-Za-z0-9_]*|"[^"]*"|\(|\)|\[|\]|[^\s\[\]\(\)]+/g) || [];
-      
+
       for (const part of parts) {
         // If it's not a variable or string, further split on operators
         if (!part.startsWith(':') && !part.startsWith('"') && !['(', ')', '[', ']'].includes(part)) {
@@ -323,11 +323,11 @@ export class LogoRuntime {
       this.justResumed = false;
       this.lastSteppedLine = -1; // Reset last stepped line
     }
-    
+
     // Execute commands until we pause or complete
     while (this.executionIndex < this.executionTokens.length && !this.stopExecution) {
       const token = this.executionTokens[this.executionIndex];
-      
+
       if (token.value.toUpperCase() === 'TO') {
         // Skip procedure definitions
         let depth = 1;
@@ -343,14 +343,14 @@ export class LogoRuntime {
         this.currentLine = currentLineNum;
         // Save state before executing (for reverse debugging)
         this.saveExecutionState();
-        
+
         // Check if we should pause before executing this line
         // When resuming, skip breakpoint check if we're on the same line we just paused at
         // (to avoid immediately re-triggering the same breakpoint)
-        const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) && 
+        const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
                                          (!this.justResumed || this.currentLine !== this.lastSteppedLine);
         const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
-        
+
         if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
           this.pauseRequested = true;
           await this.pauseExecution();
@@ -367,13 +367,13 @@ export class LogoRuntime {
 
         // Execute all commands on this line
         try {
-          while (this.executionIndex < this.executionTokens.length && 
-                 !this.stopExecution && 
+          while (this.executionIndex < this.executionTokens.length &&
+                 !this.stopExecution &&
                  !this.pauseRequested &&
                  this.executionTokens[this.executionIndex].line === currentLineNum) {
             const result = await this.executeCommand(this.executionTokens, this.executionIndex);
             this.executionIndex = result.nextIndex;
-            
+
             // After executing a command, check if we should pause for step out
             // This handles the case where a procedure returns and we need to pause at the caller
             if (this.stepMode === 'stepOut' && this.callStack.length < this.stepStartCallStackDepth) {
@@ -395,7 +395,7 @@ export class LogoRuntime {
         }
       }
     }
-    
+
     return true; // Execution complete
   }
 
@@ -425,6 +425,13 @@ export class LogoRuntime {
       const distance = await this.evaluateExpression(tokens, startIndex + 1);
       this.forward(-distance.value);
       return { nextIndex: distance.nextIndex };
+    }
+
+    if (cmd === 'ARC') {
+      const angle = await this.evaluateExpression(tokens, startIndex + 1);
+      const radius = await this.evaluateExpression(tokens, angle.nextIndex);
+      this.arc(angle.value, radius.value);
+      return { nextIndex: radius.nextIndex };
     }
 
     if (cmd === 'RT' || cmd === 'RIGHT') {
@@ -511,7 +518,7 @@ export class LogoRuntime {
       if (posResult.values.length >= 2) {
         const newX = posResult.values[0];
         const newY = posResult.values[1];
-        
+
         if (this.turtle.penDown) {
           this.drawCommands.push({
             type: 'line',
@@ -527,7 +534,7 @@ export class LogoRuntime {
             angle: this.turtle.angle
           });
         }
-        
+
         this.turtle.x = newX;
         this.turtle.y = newY;
       }
@@ -606,7 +613,7 @@ export class LogoRuntime {
     }
 
     const blockEnd = i - 1;
-    
+
     // Determine if this is a single-line REPEAT block
     const repeatLine = tokens[startIndex].line;
     let isSingleLine = true;
@@ -644,24 +651,24 @@ export class LogoRuntime {
       let j = resumeJ !== null ? resumeJ : blockStart;
       resumeJ = null; // only use resumeJ for first loop
       let lastLineInBlock = -1;
-      
+
       while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
         // Get the current line number
         const currentLineNum = j < tokens.length ? tokens[j].line : -1;
-        
+
         // For multi-line blocks, check if we moved to a new line
         if (!isSingleLine && currentLineNum !== lastLineInBlock && currentLineNum !== -1) {
           lastLineInBlock = currentLineNum;
           this.currentLine = currentLineNum;
-          
+
           // Save state for reverse debugging
           this.saveExecutionState();
-          
+
           // Check if we should pause (skip breakpoint if on same line we just resumed from)
-          const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) && 
+          const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
                                            (!this.justResumed || this.currentLine !== this.lastSteppedLine);
           const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
-          
+
           if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
             // Only pause if we are not suppressing pauses for this block
             if (!(this as any)._suppressPauseCounter) {
@@ -680,7 +687,7 @@ export class LogoRuntime {
               this.insideSingleLineBlock = false;
               this.pauseRequested = true;
               await this.pauseExecution();
-              
+
               // For step out, don't throw the exception - let execution continue to exit the procedure
               if (this.stepMode !== 'stepOut') {
                 throw new PauseException(); // Throw to bubble up and pause execution
@@ -710,16 +717,16 @@ export class LogoRuntime {
           }
           this.justResumed = false;
         }
-        
+
         // Execute all commands on this line
         while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
           const tokenLine = tokens[j].line;
-          
+
           // If we've moved to a different line, break to trigger pause check
           if (tokenLine !== currentLineNum) {
             break;
           }
-          
+
           this.currentLine = tokenLine;
           const result = await this.executeCommand(tokens, j);
           j = result.nextIndex;
@@ -765,7 +772,7 @@ export class LogoRuntime {
     }
 
     const blockEnd = i - 1;
-    
+
     // Determine if this is a single-line IF block
     const ifLine = tokens[startIndex].line;
     let isSingleLine = true;
@@ -785,24 +792,24 @@ export class LogoRuntime {
     if (condition.value !== 0) {
       let j = blockStart;
       let lastLineInBlock = -1;
-      
+
       while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
         // Get the current line number
         const currentLineNum = j < tokens.length ? tokens[j].line : -1;
-        
+
         // For multi-line blocks, check if we moved to a new line
         if (!isSingleLine && currentLineNum !== lastLineInBlock && currentLineNum !== -1) {
           lastLineInBlock = currentLineNum;
           this.currentLine = currentLineNum;
-          
+
           // Save state for reverse debugging
           this.saveExecutionState();
-          
+
           // Check if we should pause (skip breakpoint if on same line we just resumed from)
-          const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) && 
+          const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
                                            (!this.justResumed || this.currentLine !== this.lastSteppedLine);
           const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
-          
+
           if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
             this.insideSingleLineBlock = false;
             this.pauseRequested = true;
@@ -811,23 +818,23 @@ export class LogoRuntime {
           }
           this.justResumed = false;
         }
-        
+
         // Execute all commands on this line
         while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
           const tokenLine = tokens[j].line;
-          
+
           // If we've moved to a different line, break to trigger pause check
           if (tokenLine !== currentLineNum) {
             break;
           }
-          
+
           this.currentLine = tokenLine;
           const result = await this.executeCommand(tokens, j);
           j = result.nextIndex;
         }
       }
     }
-    
+
     // Clear single-line block flag
     this.insideSingleLineBlock = false;
 
@@ -847,7 +854,7 @@ export class LogoRuntime {
 
     // Check if we're resuming from a paused state inside this procedure
     const pausedState = (this as any)._pausedProcState;
-    const isResuming = pausedState && pausedState.procName === name && 
+    const isResuming = pausedState && pausedState.procName === name &&
                        pausedState.callSiteLine === callSiteLine &&
                        pausedState.callStackDepth === this.callStack.length;
 
@@ -898,7 +905,7 @@ export class LogoRuntime {
         if (this.shouldPause()) {
           this.pauseRequested = true;
           (this as any)._pausedOnProcedureEntry = { callSiteLine, procName: name };
-          
+
           // Save state to resume from this point
           (this as any)._pausedProcState = {
             procName: name,
@@ -907,7 +914,7 @@ export class LogoRuntime {
             returnIndex: i,
             callStackDepth: this.callStack.length
           };
-          
+
           await this.pauseExecution();
           throw new PauseException();
         }
@@ -919,28 +926,28 @@ export class LogoRuntime {
     let stopped = false;
     let lastLineInProc = -1;
     let pausedException: PauseException | null = null; // Track if we're exiting due to pause
-    
+
     try {
       while (j < proc.body.length && !this.stopExecution && !this.pauseRequested) {
         // Get the current line number
         const currentLineNum = j < proc.body.length ? proc.body[j].line : -1;
-        
+
         // Check if we moved to a new line
         if (currentLineNum !== lastLineInProc && currentLineNum !== -1) {
           lastLineInProc = currentLineNum;
           this.currentLine = currentLineNum;
-          
+
           // Save state for reverse debugging
           this.saveExecutionState();
-          
+
           // Check if we should pause (skip breakpoint if on same line we just resumed from)
-          const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) && 
+          const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
                                            (!this.justResumed || this.currentLine !== this.lastSteppedLine);
           const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
-          
+
           if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
             this.pauseRequested = true;
-            
+
             // Save state to resume from this point
             (this as any)._pausedProcState = {
               procName: name,
@@ -949,22 +956,22 @@ export class LogoRuntime {
               returnIndex: i,
               callStackDepth: this.callStack.length
             };
-            
+
             await this.pauseExecution();
             throw new PauseException(); // Throw to bubble up and pause execution
           }
           this.justResumed = false;
         }
-        
+
         // Execute all commands on this line
         while (j < proc.body.length && !this.stopExecution && !this.pauseRequested) {
           const tokenLine = proc.body[j].line;
-          
+
           // If we've moved to a different line, break to trigger pause check
           if (tokenLine !== currentLineNum) {
             break;
           }
-          
+
           this.currentLine = tokenLine;
           const result = await this.executeCommand(proc.body, j);
           j = result.nextIndex;
@@ -977,7 +984,7 @@ export class LogoRuntime {
       } else if (e instanceof PauseException) {
         // Save the pause exception so finally block knows we're pausing (not completing)
         pausedException = e;
-        
+
         // Save procedure state so we can resume from here
         (this as any)._pausedProcState = {
           procName: name,
@@ -986,7 +993,7 @@ export class LogoRuntime {
           returnIndex: i,
           callStackDepth: this.callStack.length
         };
-        
+
         // Don't re-throw here - let finally block handle it after cleanup decision
       } else {
         throw e;
@@ -996,7 +1003,7 @@ export class LogoRuntime {
       if (!pausedException) {
         // Remove from call stack
         this.callStack.pop();
-        
+
         // Check if we should pause after returning from the procedure (for step out)
         if (this.stepMode === 'stepOut' && this.callStack.length < this.stepStartCallStackDepth) {
           // Update current line to the call site so debugger shows correct location
@@ -1013,7 +1020,7 @@ export class LogoRuntime {
         // But preserve any global variables that were modified
         const localVars = this.variables;
         this.variables = savedVars;
-        
+
         // Copy back any variables that existed before and were modified
         for (const [key, value] of localVars) {
           // Check if this is not a parameter (params are now stored without ':' prefix)
@@ -1024,7 +1031,7 @@ export class LogoRuntime {
         }
       }
     }
-    
+
     // If we caught a pause exception, re-throw it after finally block has run
     if (pausedException) {
       throw pausedException;
@@ -1050,14 +1057,14 @@ export class LogoRuntime {
   ): Promise<{ value: number; nextIndex: number }> {
     // Parse primary (number or variable)
     const primary = await this.parsePrimary(tokens, startIndex);
-    
+
     // Check for binary operator
     if (primary.nextIndex < tokens.length) {
       const op = tokens[primary.nextIndex].value;
-      
+
       if (['+', '-', '*', '/', '=', '<', '>'].includes(op)) {
         const right = await this.parseExpression(tokens, primary.nextIndex + 1);
-        
+
         let result = 0;
         switch (op) {
           case '+': result = primary.value + right.value; break;
@@ -1068,11 +1075,11 @@ export class LogoRuntime {
           case '<': result = primary.value < right.value ? 1 : 0; break;
           case '>': result = primary.value > right.value ? 1 : 0; break;
         }
-        
+
         return { value: result, nextIndex: right.nextIndex };
       }
     }
-    
+
     return primary;
   }
 
@@ -1116,25 +1123,25 @@ export class LogoRuntime {
     startIndex: number
   ): Promise<{ values: number[]; nextIndex: number }> {
     const values: number[] = [];
-    
+
     if (startIndex >= tokens.length || tokens[startIndex].value !== '[') {
       return { values, nextIndex: startIndex };
     }
-    
+
     let i = startIndex + 1;
-    
+
     // Parse values until we hit the closing bracket
     while (i < tokens.length && tokens[i].value !== ']') {
       const result = await this.evaluateExpression(tokens, i);
       values.push(result.value);
       i = result.nextIndex;
     }
-    
+
     // Skip the closing bracket
     if (i < tokens.length && tokens[i].value === ']') {
       i++;
     }
-    
+
     return { values, nextIndex: i };
   }
 
@@ -1161,6 +1168,51 @@ export class LogoRuntime {
 
     this.turtle.x = newX;
     this.turtle.y = newY;
+  }
+
+  private arc(angle: number, radius: number): void {
+    if (angle === 0 || radius === 0) {
+      return;
+    }
+
+    const segments = Math.max(1, Math.ceil(Math.abs(angle) / 5));
+    const stepAngle = angle / segments;
+
+    const deg2rad = Math.PI / 180
+    for (let i = 0; i < segments; i++) {
+      const startX = this.turtle.x;
+      const startY = this.turtle.y;
+      const startHeading = this.turtle.angle;
+
+      const headingRadians = startHeading * deg2rad;
+      const centerX = startX + radius * Math.cos(headingRadians);
+      const centerY = startY - radius * Math.sin(headingRadians);
+
+      const endHeading = startHeading + stepAngle;
+      const endHeadingRadians = endHeading * deg2rad;
+      const newX = centerX - radius * Math.cos(endHeadingRadians);
+      const newY = centerY + radius * Math.sin(endHeadingRadians);
+
+      if (this.turtle.penDown) {
+        this.drawCommands.push({
+          type: 'line',
+          from: { x: startX, y: startY },
+          to: { x: newX, y: newY },
+          color: this.turtle.penColor,
+          angle: endHeading
+        });
+      } else {
+        this.drawCommands.push({
+          type: 'move',
+          to: { x: newX, y: newY },
+          angle: endHeading
+        });
+      }
+
+      this.turtle.x = newX;
+      this.turtle.y = newY;
+      this.turtle.angle = endHeading;
+    }
   }
 
   private numberToColor(num: number): string {

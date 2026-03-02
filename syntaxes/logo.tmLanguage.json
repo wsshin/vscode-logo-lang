@@ -51,7 +51,7 @@
         },
         {
           "name": "support.function.turtle.logo",
-          "match": "(?i)\\b(FD|FORWARD|BK|BACK|BACKWARD|RT|RIGHT|LT|LEFT|SETH|SETHEADING|SETXY|SETPOS)\\b"
+          "match": "(?i)\\b(FD|FORWARD|BK|BACK|BACKWARD|RT|RIGHT|LT|LEFT|ARC|SETH|SETHEADING|SETXY|SETPOS)\\b"
         },
         {
           "name": "support.function.pen.logo",

@@ -127,7 +127,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
   // ----- Unsupported command warnings -----
   // Supported command set (upper-case)
   const supported = new Set<string>([
-    'FD','FORWARD','BK','BACK','BACKWARD','RT','RIGHT','LT','LEFT','SETH','SETHEADING',
+    'FD','FORWARD','BK','BACK','BACKWARD','RT','RIGHT','LT','LEFT','ARC','SETH','SETHEADING',
     'PU','PENUP','PD','PENDOWN','CS','CLEARSCREEN','CLEAN','HOME','SETPOS','HT','HIDETURTLE','ST','SHOWTURTLE','SETPENCOLOR','SETPC',
     'REPEAT','IF','STOP'
   ]);
@@ -167,6 +167,13 @@ export function analyzeSource(source: string): DiagnosticItem[] {
       if (up === 'RT' || up === 'RIGHT' || up === 'LT' || up === 'LEFT') {
         if (!arg) {
           push(li, tokenStart, token.length, 'error', `${token.toUpperCase()} expects 1 argument`);
+        }
+      }
+
+      if (up === 'ARC') {
+        const arg2 = parts.length > 2 ? parts[2] : null;
+        if (!arg || !arg2) {
+          push(li, tokenStart, token.length, 'error', `${token.toUpperCase()} expects 2 arguments`);
         }
       }
 

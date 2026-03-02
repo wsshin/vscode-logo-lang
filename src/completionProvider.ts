@@ -37,6 +37,7 @@ export class LogoCompletionProvider implements vscode.CompletionItemProvider {
       { label: 'RT', detail: 'Turn right', kind: vscode.CompletionItemKind.Function },
       { label: 'LEFT', detail: 'Turn left', kind: vscode.CompletionItemKind.Function },
       { label: 'LT', detail: 'Turn left', kind: vscode.CompletionItemKind.Function },
+      { label: 'ARC', detail: 'Draw an arc (angle, radius)', kind: vscode.CompletionItemKind.Function },
       { label: 'SETHEADING', detail: 'Set heading', kind: vscode.CompletionItemKind.Function },
       { label: 'SETH', detail: 'Set heading', kind: vscode.CompletionItemKind.Function },
       { label: 'SETPOS', detail: 'Set position', kind: vscode.CompletionItemKind.Function },
