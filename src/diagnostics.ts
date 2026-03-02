@@ -129,7 +129,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
   const supported = new Set<string>([
     'FD','FORWARD','BK','BACK','BACKWARD','RT','RIGHT','LT','LEFT','ARC','SETH','SETHEADING',
     'PU','PENUP','PD','PENDOWN','CS','CLEARSCREEN','CLEAN','HOME','SETPOS','HT','HIDETURTLE','ST','SHOWTURTLE','SETPENCOLOR','SETPC',
-    'REPEAT','IF','STOP'
+    'REPEAT','IF','STOP','MAKE'
   ]);
 
   for (let li = 0; li < lines.length; li++) {
