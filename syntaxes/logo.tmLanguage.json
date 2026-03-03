@@ -9,6 +9,9 @@
       "include": "#keywords"
     },
     {
+      "include": "#quoted-words"
+    },
+    {
       "include": "#strings"
     },
     {
@@ -47,7 +50,7 @@
       "patterns": [
         {
           "name": "keyword.control.logo",
-          "match": "(?i)\\b(END|IF|REPEAT|STOP|THEN|ELSE)\\b"
+          "match": "(?i)\\b(END|IF|REPEAT|STOP|THEN|ELSE|MAKE)\\b"
         },
         {
           "name": "support.function.turtle.logo",
@@ -67,9 +70,13 @@
         }
       ]
     },
+    "quoted-words": {
+      "name": "variable.other.quoted-word.logo",
+      "match": "\"[A-Za-z_][A-Za-z0-9_]*(?![^\"\\n]*\")"
+    },
     "strings": {
       "name": "string.quoted.double.logo",
-      "begin": "\"",
+      "begin": "\"(?![A-Za-z_][A-Za-z0-9_]*\")",
       "end": "\"",
       "patterns": [
         {

@@ -18,6 +18,7 @@ Standalone VSCode extension with interpreter and debugger for the Logo programmi
 - `BK` / `BACK` / `BACKWARD` - Move backward
 - `RT` / `RIGHT` - Turn right
 - `LT` / `LEFT` - Turn left
+- `ARC` - Move along an arc
 - `PU` / `PENUP` - Lift pen
 - `PD` / `PENDOWN` - Put pen down
 
@@ -32,7 +33,7 @@ Standalone VSCode extension with interpreter and debugger for the Logo programmi
 
 ### Variables and Expressions
 - `:variable` - Variable reference
-- `:var = expression` - Variable assignment
+- `:var = expression` / `MAKE "var expression` - Variable assignment
 - Arithmetic operators: `+`, `-`, `*`, `/`
 - Comparison operators: `=`, `<`, `>`
 
