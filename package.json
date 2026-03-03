@@ -111,8 +111,23 @@
         "command": "logo.showGraphics",
         "title": "Show Logo Graphics",
         "category": "Logo"
+      },
+      {
+        "command": "logo.runFile",
+        "title": "Run Logo Program",
+        "category": "Logo",
+        "icon": "$(play)"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "logo.runFile",
+          "group": "navigation",
+          "when": "resourceLangId == logo"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

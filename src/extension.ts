@@ -54,6 +54,31 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(showGraphicsCommand);
 
+  const runFileCommand = vscode.commands.registerCommand(
+    'logo.runFile',
+    async (resource?: vscode.Uri) => {
+      const document = await resolveLogoDocument(resource);
+      if (!document) {
+        vscode.window.showErrorMessage('No active Logo editor found. Open a .logo file and try again.');
+        return;
+      }
+
+      try {
+        const runtime = new LogoRuntime();
+        runtime.loadProgram(document.getText());
+        await runtime.execute();
+
+        showGraphicsPanel(context);
+        updateGraphics(runtime.getDrawCommands());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        vscode.window.showErrorMessage(`Failed to run Logo program: ${message}`);
+      }
+    }
+  );
+
+  context.subscriptions.push(runFileCommand);
+
   // Listen for debug session custom events
   vscode.debug.onDidReceiveDebugSessionCustomEvent((event) => {
     if (event.event === 'logo.drawCommands') {
@@ -92,14 +117,34 @@ export function activate(context: vscode.ExtensionContext) {
   });
 }
 
+async function resolveLogoDocument(resource?: vscode.Uri): Promise<vscode.TextDocument | undefined> {
+  if (resource) {
+    const existingDocument = vscode.workspace.textDocuments.find(
+      doc => doc.uri.toString() === resource.toString()
+    );
+    const document = existingDocument ?? await vscode.workspace.openTextDocument(resource);
+    return document.languageId === 'logo' ? document : undefined;
+  }
+
+  const activeDocument = vscode.window.activeTextEditor?.document;
+  if (activeDocument?.languageId === 'logo') {
+    return activeDocument;
+  }
+
+  return undefined;
+}
+
 function showGraphicsPanel(context: vscode.ExtensionContext) {
   if (graphicsPanel) {
-    graphicsPanel.reveal(vscode.ViewColumn.Two);
+    graphicsPanel.reveal(vscode.ViewColumn.Two, true);
   } else {
     graphicsPanel = vscode.window.createWebviewPanel(
       'logoGraphics',
       'Logo Graphics',
-      vscode.ViewColumn.Two,
+      {
+        viewColumn: vscode.ViewColumn.Two,
+        preserveFocus: true
+      },
       {
         enableScripts: true,
         retainContextWhenHidden: true
