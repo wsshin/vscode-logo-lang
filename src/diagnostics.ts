@@ -14,6 +14,72 @@ export function analyzeSource(source: string): DiagnosticItem[] {
   const diagnostics: DiagnosticItem[] = [];
   const lines = source.split('\n');
 
+  function getCodePart(line: string): string {
+    const commentIndex = line.indexOf(';');
+    return commentIndex === -1 ? line : line.substring(0, commentIndex);
+  }
+
+  function advancePastString(codePart: string, ci: number): number {
+    if (ci + 1 < codePart.length && /[A-Za-z_]/.test(codePart[ci + 1])) {
+      ci++;
+      while (ci < codePart.length && /[A-Za-z0-9_]/.test(codePart[ci])) {
+        ci++;
+      }
+      return ci - 1;
+    }
+
+    const close = codePart.indexOf('"', ci + 1);
+    return close !== -1 ? close : ci;
+  }
+
+  function findNextBlock(startLine: number, startCol: number): { openLine: number; openCol: number; closeLine: number; closeCol: number } | null {
+    let openLine = -1;
+    let openCol = -1;
+    let depth = 0;
+    let started = false;
+    let inString = false;
+
+    for (let li = startLine; li < lines.length; li++) {
+      const codePart = getCodePart(lines[li]);
+      let ci = li === startLine ? startCol : 0;
+
+      for (; ci < codePart.length; ci++) {
+        const ch = codePart[ci];
+        if (ch === '"') {
+          const nextIndex = advancePastString(codePart, ci);
+          if (nextIndex !== ci) {
+            ci = nextIndex;
+            continue;
+          }
+          inString = !inString;
+          continue;
+        }
+        if (inString) continue;
+
+        if (!started) {
+          if (ch === '[') {
+            started = true;
+            depth = 1;
+            openLine = li;
+            openCol = ci;
+          }
+          continue;
+        }
+
+        if (ch === '[') {
+          depth++;
+        } else if (ch === ']') {
+          depth--;
+          if (depth === 0) {
+            return { openLine, openCol, closeLine: li, closeCol: ci };
+          }
+        }
+      }
+    }
+
+    return started ? { openLine, openCol, closeLine: -1, closeCol: -1 } : null;
+  }
+
   // Helper to add diagnostic
   function push(line: number, startChar: number, length: number, severity: Severity, message: string) {
     diagnostics.push({ line, startChar, length, severity, message });
@@ -23,9 +89,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
   // In Logo, `"name` is a quoted word token (not an unterminated string).
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // Find comment start
-    const commentIndex = line.indexOf(';');
-    const codePart = commentIndex === -1 ? line : line.substring(0, commentIndex);
+    const codePart = getCodePart(line);
 
     let col = 0;
     while (col < codePart.length) {
@@ -71,28 +135,15 @@ export function analyzeSource(source: string): DiagnosticItem[] {
   const stack: Bracket[] = [];
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
-    // ignore comments
-    const commentIndex = line.indexOf(';');
-    const codePart = commentIndex === -1 ? line : line.substring(0, commentIndex);
+    const codePart = getCodePart(line);
     let inString = false;
 
     for (let ci = 0; ci < codePart.length; ci++) {
       const ch = codePart[ci];
       if (ch === '"') {
-        // Closed string literal: skip to closing quote.
-        const close = codePart.indexOf('"', ci + 1);
-        if (close !== -1) {
-          ci = close;
-          continue;
-        }
-
-        // Skip Logo quoted words like "name (do not toggle string mode)
-        if (ci + 1 < codePart.length && /[A-Za-z_]/.test(codePart[ci + 1])) {
-          ci++;
-          while (ci < codePart.length && /[A-Za-z0-9_]/.test(codePart[ci])) {
-            ci++;
-          }
-          ci--; // compensate for the loop increment
+        const nextIndex = advancePastString(codePart, ci);
+        if (nextIndex !== ci) {
+          ci = nextIndex;
           continue;
         }
         inString = !inString;
@@ -130,8 +181,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
 
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
-    const commentIndex = line.indexOf(';');
-    const codePart = commentIndex === -1 ? line : line.substring(0, commentIndex);
+    const codePart = getCodePart(line);
 
     let match: RegExpExecArray | null;
     tokenRegex.lastIndex = 0;
@@ -181,8 +231,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
 
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
-    const commentIndex = line.indexOf(';');
-    const codePart = commentIndex === -1 ? line : line.substring(0, commentIndex);
+    const codePart = getCodePart(line);
     const trimmed = codePart.trim();
     if (!trimmed) continue;
 
