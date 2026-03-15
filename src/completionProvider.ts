@@ -23,6 +23,7 @@ export class LogoCompletionProvider implements vscode.CompletionItemProvider {
       { label: 'END', detail: 'End procedure definition', kind: vscode.CompletionItemKind.Keyword },
       { label: 'REPEAT', detail: 'Repeat commands', kind: vscode.CompletionItemKind.Keyword },
       { label: 'IF', detail: 'Conditional statement', kind: vscode.CompletionItemKind.Keyword },
+      { label: 'IFELSE', detail: 'Conditional with true and false branches', kind: vscode.CompletionItemKind.Keyword },
       { label: 'STOP', detail: 'Stop execution', kind: vscode.CompletionItemKind.Keyword },
       { label: 'MAKE', detail: 'Assign variable value', kind: vscode.CompletionItemKind.Keyword },
     ];
