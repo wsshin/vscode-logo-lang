@@ -226,7 +226,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
   const supported = new Set<string>([
     'FD','FORWARD','BK','BACK','BACKWARD','RT','RIGHT','LT','LEFT','ARC','SETH','SETHEADING',
     'PU','PENUP','PD','PENDOWN','CS','CLEARSCREEN','CLEAN','HOME','SETPOS','HT','HIDETURTLE','ST','SHOWTURTLE','SETPENCOLOR','SETPC',
-    'REPEAT','IF','STOP','MAKE','RANDOM'
+    'REPEAT','IF','IFELSE','STOP','MAKE','RANDOM'
   ]);
 
   for (let li = 0; li < lines.length; li++) {
@@ -299,6 +299,24 @@ export function analyzeSource(source: string): DiagnosticItem[] {
             }
             if (!found) {
               push(li, tokenStart, token.length, 'error', `REPEAT expects a block`);
+            }
+          }
+        }
+      }
+
+      if (up === 'IFELSE') {
+        if (!arg) {
+          push(li, tokenStart, token.length, 'error', 'IFELSE expects a condition');
+        } else if (arg.trim().startsWith('[')) {
+          push(li, tokenStart, token.length, 'error', 'IFELSE expects a condition');
+        } else {
+          const firstBlock = findNextBlock(li, tokenStart + token.length);
+          if (!firstBlock) {
+            push(li, tokenStart, token.length, 'error', 'IFELSE expects a true block');
+          } else if (firstBlock.closeLine !== -1) {
+            const secondBlock = findNextBlock(firstBlock.closeLine, firstBlock.closeCol + 1);
+            if (!secondBlock) {
+              push(li, tokenStart, token.length, 'error', 'IFELSE expects a false block');
             }
           }
         }
