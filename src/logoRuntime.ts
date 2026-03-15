@@ -568,6 +568,10 @@ export class LogoRuntime {
       return await this.executeIf(tokens, startIndex);
     }
 
+    if (cmd === 'IFELSE') {
+      return await this.executeIfElse(tokens, startIndex);
+    }
+
     if (cmd === 'STOP') {
       throw new StopException();
     }
@@ -850,6 +854,115 @@ export class LogoRuntime {
           const result = await this.executeCommand(tokens, j);
           j = result.nextIndex;
         }
+      }
+    }
+
+    // Clear single-line block flag
+    this.insideSingleLineBlock = false;
+
+    return { nextIndex: i };
+  }
+
+  private async executeIfElse(
+    tokens: Array<{ value: string; line: number }>,
+    startIndex: number
+  ): Promise<{ nextIndex: number }> {
+    const condition = await this.evaluateExpression(tokens, startIndex + 1);
+    let i = condition.nextIndex;
+
+    // Find the true block in brackets
+    if (i >= tokens.length || tokens[i].value !== '[') {
+      return { nextIndex: i };
+    }
+
+    const trueBlockStart = i + 1;
+    let depth = 1;
+    i++;
+
+    while (i < tokens.length && depth > 0) {
+      if (tokens[i].value === '[') depth++;
+      else if (tokens[i].value === ']') depth--;
+      i++;
+    }
+
+    const trueBlockEnd = i - 1;
+
+    // Find the false block in brackets
+    if (i >= tokens.length || tokens[i].value !== '[') {
+      return { nextIndex: i };
+    }
+
+    const falseBlockStart = i + 1;
+    depth = 1;
+    i++;
+
+    while (i < tokens.length && depth > 0) {
+      if (tokens[i].value === '[') depth++;
+      else if (tokens[i].value === ']') depth--;
+      i++;
+    }
+
+    const falseBlockEnd = i - 1;
+
+    const blockStart = condition.value !== 0 ? trueBlockStart : falseBlockStart;
+    const blockEnd = condition.value !== 0 ? trueBlockEnd : falseBlockEnd;
+
+    // Determine if this is a single-line IFELSE block
+    const ifElseLine = tokens[startIndex].line;
+    let isSingleLine = true;
+    for (let j = blockStart; j < blockEnd; j++) {
+      if (tokens[j].line !== ifElseLine) {
+        isSingleLine = false;
+        break;
+      }
+    }
+
+    // If single-line, mark that we're inside a single-line block
+    if (isSingleLine) {
+      this.insideSingleLineBlock = true;
+    }
+
+    let j = blockStart;
+    let lastLineInBlock = -1;
+
+    while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
+      // Get the current line number
+      const currentLineNum = j < tokens.length ? tokens[j].line : -1;
+
+      // For multi-line blocks, check if we moved to a new line
+      if (!isSingleLine && currentLineNum !== lastLineInBlock && currentLineNum !== -1) {
+        lastLineInBlock = currentLineNum;
+        this.currentLine = currentLineNum;
+
+        // Save state for reverse debugging
+        this.saveExecutionState();
+
+        // Check if we should pause (skip breakpoint if on same line we just resumed from)
+        const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
+                                         (!this.justResumed || this.currentLine !== this.lastSteppedLine);
+        const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
+
+        if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
+          this.insideSingleLineBlock = false;
+          this.pauseRequested = true;
+          await this.pauseExecution();
+          throw new PauseException(); // Throw to bubble up and pause execution
+        }
+        this.justResumed = false;
+      }
+
+      // Execute all commands on this line
+      while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
+        const tokenLine = tokens[j].line;
+
+        // If we've moved to a different line, break to trigger pause check
+        if (tokenLine !== currentLineNum) {
+          break;
+        }
+
+        this.currentLine = tokenLine;
+        const result = await this.executeCommand(tokens, j);
+        j = result.nextIndex;
       }
     }
 

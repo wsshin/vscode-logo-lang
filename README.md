@@ -35,6 +35,7 @@ Standalone VSCode extension with interpreter and debugger for the Logo programmi
 ### Control Structures
 - `REPEAT n [commands]` - Repeat commands n times
 - `IF condition [commands]` - Conditional execution
+- `IFELSE condition [true-commands] [false-commands]` - Conditional execution with two branches
 - `TO name :param1 :param2 ... END` - Define procedures
 
 ### Variables and Expressions
