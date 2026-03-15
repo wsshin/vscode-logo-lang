@@ -568,6 +568,10 @@ export class LogoRuntime {
       return await this.executeIf(tokens, startIndex);
     }
 
+    if (cmd === 'IFELSE') {
+      return await this.executeIfElse(tokens, startIndex);
+    }
+
     if (cmd === 'STOP') {
       throw new StopException();
     }
