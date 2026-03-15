@@ -50,7 +50,7 @@
       "patterns": [
         {
           "name": "keyword.control.logo",
-          "match": "(?i)\\b(END|IF|REPEAT|STOP|THEN|ELSE|MAKE)\\b"
+          "match": "(?i)\\b(END|IF|IFELSE|REPEAT|STOP|THEN|ELSE|MAKE)\\b"
         },
         {
           "name": "support.function.turtle.logo",
