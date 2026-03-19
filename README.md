@@ -40,8 +40,10 @@ Standalone VSCode extension with interpreter and debugger for the Logo programmi
 ### Variables and Expressions
 - `:variable` - Variable reference
 - `:var = expression` / `MAKE "var expression` - Variable assignment
+- `RANDOM n` - Random integer in `[0, n)`, or `0` when `n <= 0`
 - Arithmetic operators: `+`, `-`, `*`, `/`
 - Comparison operators: `=`, `<`, `>`
+- Example: `MAKE "A (RANDOM 10)` or `FD (RANDOM 50)`
 
 ## Additional Commands
 - `ARC` - Move along an arc

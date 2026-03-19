@@ -176,7 +176,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
   const supported = new Set<string>([
     'FD','FORWARD','BK','BACK','BACKWARD','RT','RIGHT','LT','LEFT','ARC','SETH','SETHEADING',
     'PU','PENUP','PD','PENDOWN','CS','CLEARSCREEN','CLEAN','HOME','SETPOS','HT','HIDETURTLE','ST','SHOWTURTLE','SETPENCOLOR','SETPC',
-    'REPEAT','IF','STOP','MAKE'
+    'REPEAT','IF','STOP','MAKE','RANDOM'
   ]);
 
   for (let li = 0; li < lines.length; li++) {
@@ -267,6 +267,12 @@ export function analyzeSource(source: string): DiagnosticItem[] {
           push(li, tokenStart, token.length, 'error', `${token.toUpperCase()} expects 2 arguments`);
         } else if (!/^"[A-Za-z_][A-Za-z0-9_]*$/.test(arg)) {
           push(li, tokenStart, token.length, 'error', `${token.toUpperCase()} expects first argument to be a quoted variable name`);
+        }
+      }
+
+      if (up === 'RANDOM') {
+        if (!arg) {
+          push(li, tokenStart, token.length, 'error', `${token.toUpperCase()} expects 1 argument`);
         }
       }
 

@@ -1123,6 +1123,18 @@ export class LogoRuntime {
       return { value, nextIndex: startIndex + 1 };
     }
 
+    if (token.value.toUpperCase() === 'RANDOM') {
+      const upperBound = await this.parsePrimary(tokens, startIndex + 1);
+      if (upperBound.value <= 0) {
+        return { value: 0, nextIndex: upperBound.nextIndex };
+      }
+
+      return {
+        value: Math.floor(Math.random() * upperBound.value),
+        nextIndex: upperBound.nextIndex
+      };
+    }
+
     // Parenthesized expression
     if (token.value === '(') {
       const expr = await this.parseExpression(tokens, startIndex + 1);

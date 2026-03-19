@@ -66,6 +66,10 @@ export class LogoCompletionProvider implements vscode.CompletionItemProvider {
       { label: 'ST', detail: 'Show the turtle', kind: vscode.CompletionItemKind.Function },
     ];
 
+    const mathCommands: LogoCompletionItem[] = [
+      { label: 'RANDOM', detail: 'Random integer from 0 to n-1', kind: vscode.CompletionItemKind.Function },
+    ];
+
     // Code snippets
     const snippets: LogoCompletionItem[] = [
       {
@@ -104,6 +108,7 @@ export class LogoCompletionProvider implements vscode.CompletionItemProvider {
       ...turtleCommands,
       ...penCommands,
       ...screenCommands,
+      ...mathCommands,
       ...snippets
     ];
 

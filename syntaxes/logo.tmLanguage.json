@@ -67,6 +67,10 @@
         {
           "name": "support.function.logic.logo",
           "match": "(?i)\\b(AND|OR|NOT|TRUE|FALSE)\\b"
+        },
+        {
+          "name": "support.function.math.logo",
+          "match": "(?i)\\b(RANDOM)\\b"
         }
       ]
     },
