@@ -48,6 +48,7 @@ Standalone VSCode extension with interpreter and debugger for the Logo programmi
 
 ## Additional Commands
 - `ARC` - Move along an arc
+- `PRINT` / `PR` - Print a value to the output
 
 ## Usage
 

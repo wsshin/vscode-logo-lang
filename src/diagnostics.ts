@@ -226,7 +226,8 @@ export function analyzeSource(source: string): DiagnosticItem[] {
   const supported = new Set<string>([
     'FD','FORWARD','BK','BACK','BACKWARD','RT','RIGHT','LT','LEFT','ARC','SETH','SETHEADING',
     'PU','PENUP','PD','PENDOWN','CS','CLEARSCREEN','CLEAN','HOME','SETPOS','HT','HIDETURTLE','ST','SHOWTURTLE','SETPENCOLOR','SETPC',
-    'REPEAT','IF','IFELSE','STOP','MAKE','RANDOM'
+    'REPEAT','IF','IFELSE','STOP','MAKE','RANDOM',
+    'PRINT','PR'
   ]);
 
   for (let li = 0; li < lines.length; li++) {
@@ -261,6 +262,12 @@ export function analyzeSource(source: string): DiagnosticItem[] {
       }
 
       if (up === 'RT' || up === 'RIGHT' || up === 'LT' || up === 'LEFT') {
+        if (!arg) {
+          push(li, tokenStart, token.length, 'error', `${token.toUpperCase()} expects 1 argument`);
+        }
+      }
+
+      if (up === 'PRINT' || up === 'PR') {
         if (!arg) {
           push(li, tokenStart, token.length, 'error', `${token.toUpperCase()} expects 1 argument`);
         }
@@ -350,20 +357,30 @@ export function analyzeSource(source: string): DiagnosticItem[] {
     }
 
     // Also check for commands immediately after '[' (e.g., single-line REPEAT/IF blocks)
+    // Skip brackets that are data-list arguments to PRINT/PR
+    const dataListCommands = new Set(['PRINT', 'PR']);
     let idx = 0;
     while (true) {
       const br = codePart.indexOf('[', idx);
       if (br === -1) break;
-      // find first word after '['
-      const after = codePart.substring(br + 1);
-      const m2 = /^[\s]*([A-Za-z_][A-Za-z0-9_]*)/.exec(after);
-      if (m2) {
-        const token = m2[1];
-        // compute column relative to codePart: br + 1 + index within 'after' plus any leading spaces within m2[0]
-        const tokenStart = br + 1 + m2.index + (m2[0].indexOf(token));
-        const up = token.toUpperCase();
-        if (!supported.has(up) && !procNames.has(up) && up !== 'TO' && up !== 'END') {
-          push(li, tokenStart, token.length, 'warning', `Unsupported command '${token}'`);
+
+      // Determine the command token that precedes this '['
+      const before = codePart.substring(0, br).trim();
+      const precedingTokenMatch = /([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(before);
+      const precedingCmd = precedingTokenMatch ? precedingTokenMatch[1].toUpperCase() : '';
+
+      // If the '[' is a data list (e.g. PRINT [Hello World]), skip the inner-command check
+      if (!dataListCommands.has(precedingCmd)) {
+        // find first word after '['
+        const after = codePart.substring(br + 1);
+        const m2 = /^[\s]*([A-Za-z_][A-Za-z0-9_]*)/.exec(after);
+        if (m2) {
+          const token = m2[1];
+          const tokenStart = br + 1 + m2.index + (m2[0].indexOf(token));
+          const up = token.toUpperCase();
+          if (!supported.has(up) && !procNames.has(up) && up !== 'TO' && up !== 'END') {
+            push(li, tokenStart, token.length, 'warning', `Unsupported command '${token}'`);
+          }
         }
       }
       idx = br + 1;

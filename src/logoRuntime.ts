@@ -73,6 +73,7 @@ export class LogoRuntime {
   private executionHistory: ExecutionState[] = [];
   private maxHistorySize: number = 1000;
   private onStepCallback?: () => void;
+  private onPrintCallback?: (message: string) => void;
   private pauseRequested: boolean = false;
   private executionTokens: Array<{ value: string; line: number }> = [];
   private executionIndex: number = 0;
@@ -136,6 +137,10 @@ export class LogoRuntime {
 
   public setStepCallback(callback: () => void): void {
     this.onStepCallback = callback;
+  }
+
+  public setPrintCallback(callback: (message: string) => void): void {
+    this.onPrintCallback = callback;
   }
 
   public getExecutionHistory(): ExecutionState[] {
@@ -557,6 +562,44 @@ export class LogoRuntime {
       const color = await this.evaluateExpression(tokens, startIndex + 1);
       this.turtle.penColor = this.numberToColor(color.value);
       return { nextIndex: color.nextIndex };
+    }
+
+    // Output commands
+    if (cmd === 'PRINT' || cmd === 'PR') {
+      const nextIndex = startIndex + 1;
+      if (nextIndex >= tokens.length) {
+        throw new Error('PRINT expects an argument');
+      }
+      const nextToken = tokens[nextIndex];
+
+      let message: string;
+      let endIndex: number;
+
+      if (nextToken.value.startsWith('"')) {
+        // Quoted word: PRINT "Hello
+        message = nextToken.value.substring(1);
+        endIndex = nextIndex + 1;
+      } else if (nextToken.value === '[') {
+        // List: PRINT [Hello World]
+        const words: string[] = [];
+        let i = nextIndex + 1;
+        while (i < tokens.length && tokens[i].value !== ']') {
+          words.push(tokens[i].value);
+          i++;
+        }
+        message = words.join(' ');
+        endIndex = i < tokens.length && tokens[i].value === ']' ? i + 1 : i;
+      } else {
+        // Numeric expression or variable
+        const value = await this.evaluateExpression(tokens, nextIndex);
+        message = String(value.value);
+        endIndex = value.nextIndex;
+      }
+
+      if (this.onPrintCallback) {
+        this.onPrintCallback(message);
+      }
+      return { nextIndex: endIndex };
     }
 
     // Control structures

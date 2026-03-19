@@ -11,6 +11,17 @@ let previewPanel: vscode.WebviewPanel | undefined;
 let previewSourceUri: vscode.Uri | undefined;
 let diagnosticsCollection: vscode.DiagnosticCollection | undefined;
 
+// Shared LOGO output channel (appears next to Debug Console)
+let logoOutputChannel: vscode.OutputChannel | undefined;
+
+function getLogoOutputChannel(): vscode.OutputChannel {
+  if (!logoOutputChannel) {
+    logoOutputChannel = vscode.window.createOutputChannel('LOGO');
+  }
+  logoOutputChannel.show(true);
+  return logoOutputChannel;
+}
+
 export function activate(context: vscode.ExtensionContext) {
   console.log('Logo Debugger extension is now active');
 
@@ -68,6 +79,14 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         const runtime = new LogoRuntime();
         runtime.loadProgram(document.getText());
+
+        // Route PRINT output to the LOGO output channel
+        const outputChannel = getLogoOutputChannel();
+        outputChannel.clear();
+        runtime.setPrintCallback((message: string) => {
+          outputChannel.appendLine(message);
+        });
+
         await runtime.execute();
 
         showGraphicsPanel(context);
@@ -109,12 +128,18 @@ export function activate(context: vscode.ExtensionContext) {
     if (event.event === 'logo.drawCommands') {
       updateGraphics(event.body.commands);
     }
+    if (event.event === 'logo.printOutput') {
+      const outputChannel = getLogoOutputChannel();
+      outputChannel.appendLine(event.body.text);
+    }
   });
 
-  // Auto-show graphics panel when debugging starts
+  // Auto-show graphics panel when debugging starts and clear previous output
   vscode.debug.onDidStartDebugSession((session) => {
     if (session.type === 'logo') {
       showGraphicsPanel(context);
+      const outputChannel = getLogoOutputChannel();
+      outputChannel.clear();
     }
   });
 

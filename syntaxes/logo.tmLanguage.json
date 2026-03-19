@@ -69,6 +69,10 @@
           "match": "(?i)\\b(AND|OR|NOT|TRUE|FALSE)\\b"
         },
         {
+          "name": "support.function.output.logo",
+          "match": "(?i)\\b(PRINT|PR)\\b"
+        },
+        {
           "name": "support.function.math.logo",
           "match": "(?i)\\b(RANDOM)\\b"
         }

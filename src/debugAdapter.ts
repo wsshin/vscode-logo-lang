@@ -6,6 +6,7 @@ import {
   StoppedEvent,
   BreakpointEvent,
   OutputEvent,
+  Event,
   Thread,
   StackFrame,
   Scope,
@@ -68,6 +69,12 @@ export class LogoDebugSession extends DebugSession {
       const source = fs.readFileSync(args.program, 'utf-8');
       this.sourceLines = source.split('\n');
       this.runtime.loadProgram(source);
+
+      // Set up callback for PRINT output – send as custom event so
+      // the extension can route it to the dedicated LOGO terminal.
+      this.runtime.setPrintCallback((message: string) => {
+        this.sendEvent(new Event('logo.printOutput', { text: message }));
+      });
 
       // Set up callback for when execution pauses
       this.runtime.setStepCallback(() => {
