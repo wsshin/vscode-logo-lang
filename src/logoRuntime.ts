@@ -77,7 +77,6 @@ export class LogoRuntime {
   private pauseRequested: boolean = false;
   private executionTokens: Array<{ value: string; line: number }> = [];
   private executionIndex: number = 0;
-  private justResumed: boolean = false;
   private lastSteppedLine: number = -1;
   private insideSingleLineBlock: boolean = false;
 
@@ -116,10 +115,11 @@ export class LogoRuntime {
   }
 
   public getCallStack(): Array<{ procedure: string; line: number }> {
+    // Return in callee-first order (deepest frame first) for DAP compliance
     return this.callStack.map(frame => ({
       procedure: frame.procedure,
       line: frame.line
-    }));
+    })).reverse();
   }
 
   public getVariables(): Map<string, number> {
@@ -318,14 +318,12 @@ export class LogoRuntime {
     if (this.pauseRequested) {
       // We're paused, so we should resume from where we left off
       this.pauseRequested = false;
-      this.justResumed = true; // Skip first pause check
     } else {
       // Starting fresh execution
       this.stopExecution = false;
       this.executionTokens = this.tokenize(this.sourceLines.join('\n'));
       this.executionIndex = 0;
       this.executionHistory = []; // Clear history for new execution
-      this.justResumed = false;
       this.lastSteppedLine = -1; // Reset last stepped line
     }
 
@@ -346,28 +344,28 @@ export class LogoRuntime {
         // Get the line number for the current command
         const currentLineNum = token.line;
         this.currentLine = currentLineNum;
+
+        // Check if we're resuming from inside a nested construct (procedure/REPEAT).
+        // If so, skip the pause check — the nested construct handles its own pausing.
+        const resumingInsideNested = ((this as any)._pausedProcStates && (this as any)._pausedProcStates.length > 0) || ((this as any)._pausedRepeatStates && (this as any)._pausedRepeatStates.length > 0);
+
         // Save state before executing (for reverse debugging)
         this.saveExecutionState();
 
         // Check if we should pause before executing this line
-        // When resuming, skip breakpoint check if we're on the same line we just paused at
-        // (to avoid immediately re-triggering the same breakpoint)
-        const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
-                                         (!this.justResumed || this.currentLine !== this.lastSteppedLine);
-        const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
+        // When resuming from a nested construct, skip this check entirely to avoid
+        // re-triggering breakpoints at the call site.
+        if (!resumingInsideNested) {
+          const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
+                                           this.currentLine !== this.lastSteppedLine;
+          const shouldPauseForStepMode = this.currentLine !== this.lastSteppedLine &&
+                                         this.shouldPauseForStepMode();
 
-        if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
-          this.pauseRequested = true;
-          await this.pauseExecution();
-          return false; // Paused, not complete
-        }
-
-        // If this is a top-level REPEAT and we're stepping in from the REPEAT line,
-        // clear `justResumed` now so the nested block will pause at its first line.
-        const tokenIsRepeat = token.value.toUpperCase() === 'REPEAT';
-        const clearJustResumedNow = tokenIsRepeat && this.stepMode === 'stepIn' && this.lastSteppedLine === currentLineNum;
-        if (clearJustResumedNow) {
-          this.justResumed = false;
+          if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
+            this.pauseRequested = true;
+            await this.pauseExecution();
+            return false; // Paused, not complete
+          }
         }
 
         // Execute all commands on this line
@@ -389,16 +387,26 @@ export class LogoRuntime {
           }
         } catch (e) {
           if (e instanceof PauseException) {
+            // If a procedure completed and stepOut fired, advance past it
+            if (typeof (this as any)._stepOutNextIndex === 'number') {
+              this.executionIndex = (this as any)._stepOutNextIndex;
+              delete (this as any)._stepOutNextIndex;
+            }
             // Pause was requested from nested context, return false to indicate pause
             return false;
           }
           // Re-throw other exceptions
           throw e;
         } finally {
-          // Clear the justResumed flag after we've executed (or paused)
-          this.justResumed = false;
+          // no-op: justResumed removed, pause guards use lastSteppedLine
         }
       }
+    }
+
+    // If pauseRequested was set (e.g. by stepOut returning from a procedure
+    // without throwing), report a pause rather than completion.
+    if (this.pauseRequested) {
+      return false;
     }
 
     return true; // Execution complete
@@ -655,6 +663,19 @@ export class LogoRuntime {
     return { nextIndex: startIndex + 1 };
   }
 
+  /** Push a REPEAT's pause state onto the stack, replacing any existing entry for the same repeatLine. */
+  private _pushRepeatState(
+    repeatLine: number, count: number, rep: number, j: number,
+    blockStart: number, blockEnd: number, iAfter: number, isSingleLine: boolean
+  ): void {
+    const states: any[] = (this as any)._pausedRepeatStates || [];
+    // Replace any existing entry for this repeatLine
+    const idx = states.findIndex((s: any) => s.repeatLine === repeatLine);
+    if (idx !== -1) states.splice(idx, 1);
+    states.push({ repeatLine, count, rep, j, blockStart, blockEnd, iAfter, isSingleLine });
+    (this as any)._pausedRepeatStates = states;
+  }
+
   private async executeRepeat(
     tokens: Array<{ value: string; line: number }>,
     startIndex: number
@@ -703,19 +724,28 @@ export class LogoRuntime {
     }
 
     // Execute the block count times
-    // Support resuming from a pause inside a REPEAT by restoring saved state
+    // Support resuming from a pause inside a REPEAT by restoring saved state.
+    // _pausedRepeatStates is an array (stack) so nested REPEATs across procedure
+    // boundaries can each save/restore independently.
     let repStart = 0;
     let resumeJ: number | null = null;
-    const pausedState = (this as any)._pausedRepeatState;
-    if (pausedState && pausedState.startIndex === startIndex) {
+    const pausedStatesArr: any[] = (this as any)._pausedRepeatStates || [];
+    const myStateIdx = pausedStatesArr.findIndex((s: any) => s.repeatLine === repeatLine);
+    if (myStateIdx !== -1) {
+      const pausedState = pausedStatesArr[myStateIdx];
       repStart = pausedState.rep;
       resumeJ = pausedState.j;
+      // Remove our entry from the stack
+      pausedStatesArr.splice(myStateIdx, 1);
+      (this as any)._pausedRepeatStates = pausedStatesArr;
     }
 
     for (let rep = repStart; rep < count.value && !this.stopExecution && !this.pauseRequested; rep++) {
       let j = resumeJ !== null ? resumeJ : blockStart;
+      // When resuming, initialise lastLineInBlock to the resume line so we
+      // don't re-trigger a pause check for a line we already paused at/past.
+      let lastLineInBlock = resumeJ !== null && j < tokens.length ? tokens[j].line : -1;
       resumeJ = null; // only use resumeJ for first loop
-      let lastLineInBlock = -1;
 
       while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
         // Get the current line number
@@ -729,25 +759,21 @@ export class LogoRuntime {
           // Save state for reverse debugging
           this.saveExecutionState();
 
-          // Check if we should pause (skip breakpoint if on same line we just resumed from)
-          const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
-                                           (!this.justResumed || this.currentLine !== this.lastSteppedLine);
-          const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
+          // Check if we should pause (skip if on same line we just paused at)
+          // When there are deeper paused procedure/repeat states, suppress pause checks
+          // so this REPEAT passes through to reach the actual paused location.
+          const repeatPassingThrough = ((this as any)._pausedProcStates && (this as any)._pausedProcStates.length > 0) ||
+                                       ((this as any)._pausedRepeatStates && (this as any)._pausedRepeatStates.length > 0);
+          const shouldPauseForBreakpoint = !repeatPassingThrough && this.breakpoints.has(this.currentLine) &&
+                                           this.currentLine !== this.lastSteppedLine;
+          const shouldPauseForStepMode = !repeatPassingThrough && this.currentLine !== this.lastSteppedLine &&
+                                         this.shouldPauseForStepMode();
 
           if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
             // Only pause if we are not suppressing pauses for this block
             if (!(this as any)._suppressPauseCounter) {
               // Save repeat state to resume later
-              (this as any)._pausedRepeatState = {
-                startIndex,
-                count: count.value,
-                rep,
-                j,
-                blockStart,
-                blockEnd,
-                iAfter: i,
-                isSingleLine
-              };
+              this._pushRepeatState(repeatLine, count.value, rep, j, blockStart, blockEnd, i, isSingleLine);
 
               this.insideSingleLineBlock = false;
               this.pauseRequested = true;
@@ -763,16 +789,7 @@ export class LogoRuntime {
                 // Clear suppression for step out
                 (this as any)._suppressPauseCounter = 0;
                 // Save repeat state
-                (this as any)._pausedRepeatState = {
-                  startIndex,
-                  count: count.value,
-                  rep,
-                  j,
-                  blockStart,
-                  blockEnd,
-                  iAfter: i,
-                  isSingleLine
-                };
+                this._pushRepeatState(repeatLine, count.value, rep, j, blockStart, blockEnd, i, isSingleLine);
                 this.insideSingleLineBlock = false;
                 this.pauseRequested = true;
                 await this.pauseExecution();
@@ -780,22 +797,38 @@ export class LogoRuntime {
               }
             }
           }
-          this.justResumed = false;
         }
 
         // Execute all commands on this line
-        while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
-          const tokenLine = tokens[j].line;
+        try {
+          while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
+            const tokenLine = tokens[j].line;
 
-          // If we've moved to a different line, break to trigger pause check
-          if (tokenLine !== currentLineNum) {
-            break;
+            // If we've moved to a different line, break to trigger pause check
+            if (tokenLine !== currentLineNum) {
+              break;
+            }
+
+            this.currentLine = tokenLine;
+            const result = await this.executeCommand(tokens, j);
+            j = result.nextIndex;
           }
-
-          this.currentLine = tokenLine;
-          const result = await this.executeCommand(tokens, j);
-          j = result.nextIndex;
+        } catch (e) {
+          if (e instanceof PauseException) {
+            // If a procedure completed via stepOut, advance j past it
+            if (typeof (this as any)._stepOutNextIndex === 'number') {
+              j = (this as any)._stepOutNextIndex;
+              delete (this as any)._stepOutNextIndex;
+            }
+            // A procedure call (or deeper construct) inside the REPEAT body
+            // paused execution. Save current repeat state so we can resume.
+            this._pushRepeatState(repeatLine, count.value, rep, j, blockStart, blockEnd, i, isSingleLine);
+            throw e;
+          }
+          throw e;
         }
+        // Line done — clear so breakpoints re-trigger on revisit
+        this.lastSteppedLine = -1;
       }
     }
 
@@ -808,8 +841,11 @@ export class LogoRuntime {
     }
 
     // Clear paused repeat state now that we've completed the repeat
-    if ((this as any)._pausedRepeatState && (this as any)._pausedRepeatState.startIndex === startIndex) {
-      delete (this as any)._pausedRepeatState;
+    const statesArr: any[] = (this as any)._pausedRepeatStates || [];
+    const cleanIdx = statesArr.findIndex((s: any) => s.repeatLine === repeatLine);
+    if (cleanIdx !== -1) {
+      statesArr.splice(cleanIdx, 1);
+      (this as any)._pausedRepeatStates = statesArr;
     }
     return { nextIndex: i };
   }
@@ -870,10 +906,11 @@ export class LogoRuntime {
           // Save state for reverse debugging
           this.saveExecutionState();
 
-          // Check if we should pause (skip breakpoint if on same line we just resumed from)
+          // Check if we should pause (skip if on same line we just paused at)
           const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
-                                           (!this.justResumed || this.currentLine !== this.lastSteppedLine);
-          const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
+                                           this.currentLine !== this.lastSteppedLine;
+          const shouldPauseForStepMode = this.currentLine !== this.lastSteppedLine &&
+                                         this.shouldPauseForStepMode();
 
           if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
             this.insideSingleLineBlock = false;
@@ -881,7 +918,6 @@ export class LogoRuntime {
             await this.pauseExecution();
             throw new PauseException(); // Throw to bubble up and pause execution
           }
-          this.justResumed = false;
         }
 
         // Execute all commands on this line
@@ -897,6 +933,8 @@ export class LogoRuntime {
           const result = await this.executeCommand(tokens, j);
           j = result.nextIndex;
         }
+        // Line done — clear so breakpoints re-trigger on revisit
+        this.lastSteppedLine = -1;
       }
     }
 
@@ -980,10 +1018,11 @@ export class LogoRuntime {
         // Save state for reverse debugging
         this.saveExecutionState();
 
-        // Check if we should pause (skip breakpoint if on same line we just resumed from)
+        // Check if we should pause (skip if on same line we just paused at)
         const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
-                                         (!this.justResumed || this.currentLine !== this.lastSteppedLine);
-        const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
+                                         this.currentLine !== this.lastSteppedLine;
+        const shouldPauseForStepMode = this.currentLine !== this.lastSteppedLine &&
+                                       this.shouldPauseForStepMode();
 
         if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
           this.insideSingleLineBlock = false;
@@ -991,7 +1030,6 @@ export class LogoRuntime {
           await this.pauseExecution();
           throw new PauseException(); // Throw to bubble up and pause execution
         }
-        this.justResumed = false;
       }
 
       // Execute all commands on this line
@@ -1007,6 +1045,8 @@ export class LogoRuntime {
         const result = await this.executeCommand(tokens, j);
         j = result.nextIndex;
       }
+      // Line done — clear so breakpoints re-trigger on revisit
+      this.lastSteppedLine = -1;
     }
 
     // Clear single-line block flag
@@ -1026,21 +1066,28 @@ export class LogoRuntime {
       return { nextIndex: startIndex };
     }
 
+    // _pausedProcStates is an array used as a stack (unshift/shift) for nested procedure states.
+    // Each procedure that catches a PauseException from a deeper procedure pushes its state
+    // so all levels can resume correctly.
+    const pausedStates: any[] = (this as any)._pausedProcStates || [];
+
     // Check if we're resuming from a paused state inside this procedure
-    const pausedState = (this as any)._pausedProcState;
-    const isResuming = pausedState && pausedState.procName === name &&
-                       pausedState.callSiteLine === callSiteLine &&
-                       pausedState.callStackDepth === this.callStack.length;
+    const isResuming = pausedStates.length > 0 && pausedStates[0].procName === name &&
+                       pausedStates[0].callSiteLine === callSiteLine;
 
     let savedVars: Map<string, number>;
     let i: number;
 
+    let resumeBodyIndex: number | null = null;
+
     if (isResuming) {
       // Resuming from pause - restore saved state
+      const pausedState = pausedStates.shift();
       savedVars = pausedState.savedVars;
       i = pausedState.returnIndex;
-      // Clear the paused state
-      delete (this as any)._pausedProcState;
+      resumeBodyIndex = pausedState.bodyIndex ?? null;
+      // Update the array reference
+      (this as any)._pausedProcStates = pausedStates;
       // Don't push to call stack again - it's already there from when we paused
     } else {
       // Normal entry - set up procedure execution
@@ -1070,9 +1117,6 @@ export class LogoRuntime {
       // If the user requested a 'stepIn' from the call site, pause at the procedure entry now
       // We do this after argument binding and after pushing the call frame so the stack reflects the entry
       if (this.stepMode === 'stepIn' && typeof callSiteLine === 'number' && this.lastSteppedLine === callSiteLine) {
-        // Ensure we can pause immediately (clear justResumed which is set on resume)
-        this.justResumed = false;
-
         // Pause at procedure definition line
         this.currentLine = proc.sourceLineStart;
         this.saveExecutionState();
@@ -1080,14 +1124,14 @@ export class LogoRuntime {
           this.pauseRequested = true;
           (this as any)._pausedOnProcedureEntry = { callSiteLine, procName: name };
 
-          // Save state to resume from this point
-          (this as any)._pausedProcState = {
+          // Initialize the paused states stack with this procedure's state
+          (this as any)._pausedProcStates = [{
             procName: name,
             callSiteLine,
             savedVars,
             returnIndex: i,
-            callStackDepth: this.callStack.length
-          };
+            bodyIndex: 0
+          }];
 
           await this.pauseExecution();
           throw new PauseException();
@@ -1096,117 +1140,130 @@ export class LogoRuntime {
     }
 
     // Execute procedure body
-    let j = 0;
-    let stopped = false;
+    let j = resumeBodyIndex !== null ? resumeBodyIndex : 0;
     let lastLineInProc = -1;
-    let pausedException: PauseException | null = null; // Track if we're exiting due to pause
+    let pausedException: PauseException | null = null;
+    // When resuming and there's a paused repeat state to pass through, skip the
+    // pause check on the resume line (one-shot) so we reach the nested REPEAT.
+    let skipResumeLinePause = isResuming && resumeBodyIndex !== null && ((this as any)._pausedRepeatStates && (this as any)._pausedRepeatStates.length > 0);
 
     try {
       while (j < proc.body.length && !this.stopExecution && !this.pauseRequested) {
-        // Get the current line number
         const currentLineNum = j < proc.body.length ? proc.body[j].line : -1;
 
-        // Check if we moved to a new line
         if (currentLineNum !== lastLineInProc && currentLineNum !== -1) {
           lastLineInProc = currentLineNum;
           this.currentLine = currentLineNum;
 
-          // Save state for reverse debugging
           this.saveExecutionState();
 
-          // Check if we should pause (skip breakpoint if on same line we just resumed from)
-          const shouldPauseForBreakpoint = this.breakpoints.has(this.currentLine) &&
-                                           (!this.justResumed || this.currentLine !== this.lastSteppedLine);
-          const shouldPauseForStepMode = !this.justResumed && this.shouldPauseForStepMode();
+          // When there are deeper paused procedure states in the stack, we're "passing through"
+          // this procedure to reach the actual paused location — suppress all pause checks.
+          // Also suppress once when passing through a resume line to reach a paused REPEAT.
+          const passingThrough = ((this as any)._pausedProcStates && (this as any)._pausedProcStates.length > 0) || skipResumeLinePause;
+          if (skipResumeLinePause) skipResumeLinePause = false;
+          const shouldPauseForBreakpoint = !passingThrough && this.breakpoints.has(this.currentLine) &&
+                                           this.currentLine !== this.lastSteppedLine;
+          const shouldPauseForStepMode = !passingThrough && this.currentLine !== this.lastSteppedLine &&
+                                         this.shouldPauseForStepMode();
 
           if (shouldPauseForBreakpoint || shouldPauseForStepMode) {
             this.pauseRequested = true;
 
-            // Save state to resume from this point
-            (this as any)._pausedProcState = {
+            // Initialize/update the paused states stack with this procedure's state
+            const states: any[] = (this as any)._pausedProcStates || [];
+            // Remove any existing entry for this procedure
+            const idx = states.findIndex((s: any) => s.procName === name && s.callSiteLine === callSiteLine);
+            if (idx !== -1) {
+              states.splice(idx, 1);
+            }
+            states.unshift({
               procName: name,
               callSiteLine,
               savedVars,
               returnIndex: i,
-              callStackDepth: this.callStack.length
-            };
+              bodyIndex: j
+            });
+            (this as any)._pausedProcStates = states;
 
             await this.pauseExecution();
-            throw new PauseException(); // Throw to bubble up and pause execution
+            throw new PauseException();
           }
-          this.justResumed = false;
         }
 
         // Execute all commands on this line
         while (j < proc.body.length && !this.stopExecution && !this.pauseRequested) {
           const tokenLine = proc.body[j].line;
-
-          // If we've moved to a different line, break to trigger pause check
           if (tokenLine !== currentLineNum) {
             break;
           }
-
           this.currentLine = tokenLine;
           const result = await this.executeCommand(proc.body, j);
           j = result.nextIndex;
         }
+        // Guard passed for this line — clear so breakpoints re-trigger on revisit
+        this.lastSteppedLine = -1;
       }
     } catch (e) {
       if (e instanceof StopException) {
-        stopped = true;
-        // STOP just exits this procedure, not the whole program
+        // STOP just exits this procedure
       } else if (e instanceof PauseException) {
-        // Save the pause exception so finally block knows we're pausing (not completing)
         pausedException = e;
 
-        // Save procedure state so we can resume from here
-        (this as any)._pausedProcState = {
-          procName: name,
-          callSiteLine,
-          savedVars,
-          returnIndex: i,
-          callStackDepth: this.callStack.length
-        };
+        // If a nested procedure completed via stepOut, advance j past it
+        if (typeof (this as any)._stepOutNextIndex === 'number') {
+          j = (this as any)._stepOutNextIndex;
+          delete (this as any)._stepOutNextIndex;
+        }
 
-        // Don't re-throw here - let finally block handle it after cleanup decision
+        // Push this procedure's state onto the stack so outer procedures can resume correctly.
+        // Only push if the top of the stack isn't already this procedure (avoid duplicates
+        // when the pause originated at this level's breakpoint check above).
+        const states: any[] = (this as any)._pausedProcStates || [];
+        const topIsThisProc = states.length > 0 && states[0].procName === name && states[0].callSiteLine === callSiteLine;
+        if (!topIsThisProc) {
+          states.unshift({
+            procName: name,
+            callSiteLine,
+            savedVars,
+            returnIndex: i,
+            bodyIndex: j
+          });
+          (this as any)._pausedProcStates = states;
+        }
       } else {
         throw e;
       }
     } finally {
-      // Only pop the stack and restore variables if we're actually completing (not pausing mid-execution)
       if (!pausedException) {
-        // Remove from call stack
         this.callStack.pop();
 
-        // Check if we should pause after returning from the procedure (for step out)
+        // Restore variables before any stepOut pause
+        const localVars = this.variables;
+        this.variables = savedVars;
+
+        for (const [key, value] of localVars) {
+          const isParam = proc.params.some(p => (p.startsWith(':') ? p.substring(1) : p) === key);
+          if (savedVars.has(key) && !isParam) {
+            this.variables.set(key, value);
+          }
+        }
+
         if (this.stepMode === 'stepOut' && this.callStack.length < this.stepStartCallStackDepth) {
-          // Update current line to the call site so debugger shows correct location
           if (typeof callSiteLine === 'number') {
             this.currentLine = callSiteLine;
           }
           this.saveExecutionState();
           this.pauseRequested = true;
           await this.pauseExecution();
+          // Save the nextIndex so callers catching PauseException can advance
+          // past the completed procedure call instead of re-executing it.
+          (this as any)._stepOutNextIndex = i;
           throw new PauseException();
-        }
-
-        // Restore variables (keep only the original variables, discard procedure-local ones)
-        // But preserve any global variables that were modified
-        const localVars = this.variables;
-        this.variables = savedVars;
-
-        // Copy back any variables that existed before and were modified
-        for (const [key, value] of localVars) {
-          // Check if this is not a parameter (params are now stored without ':' prefix)
-          const isParam = proc.params.some(p => (p.startsWith(':') ? p.substring(1) : p) === key);
-          if (savedVars.has(key) && !isParam) {
-            this.variables.set(key, value);
-          }
         }
       }
     }
 
-    // If we caught a pause exception, re-throw it after finally block has run
     if (pausedException) {
       throw pausedException;
     }

@@ -148,35 +148,37 @@ export class LogoDebugSession extends DebugSession {
 
     const frames: StackFrame[] = [];
 
-    // Current frame
-    frames.push(
-      new StackFrame(
-        0,
-        'main',
-        new Source(
-          path.basename(this.currentSourceFile),
-          this.currentSourceFile
-        ),
-        currentLine,
-        0
-      )
-    );
-
-    // Call stack frames
-    callStack.forEach((frame, index) => {
+    // Current frame — use deepest procedure if inside one, otherwise "main"
+    if (callStack.length > 0) {
+      // callStack is already callee-first (deepest frame first from getCallStack)
+      callStack.forEach((frame, index) => {
+        frames.push(
+          new StackFrame(
+            index,
+            frame.procedure,
+            new Source(
+              path.basename(this.currentSourceFile),
+              this.currentSourceFile
+            ),
+            index === 0 ? currentLine : frame.line,
+            0
+          )
+        );
+      });
+    } else {
       frames.push(
         new StackFrame(
-          index + 1,
-          frame.procedure,
+          0,
+          'main',
           new Source(
             path.basename(this.currentSourceFile),
             this.currentSourceFile
           ),
-          frame.line,
+          currentLine,
           0
         )
       );
-    });
+    }
 
     response.body = {
       stackFrames: frames,
