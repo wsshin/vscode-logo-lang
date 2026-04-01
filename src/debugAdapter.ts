@@ -354,20 +354,16 @@ export class LogoDebugSession extends DebugSession {
     args: DebugProtocol.EvaluateArguments
   ): void {
     const vars = this.runtime.getVariables();
-    const value = vars.get(args.expression);
+    // Variable names are stored without the ':' prefix, but hover/eval may include it
+    const expr = args.expression.replace(/^:/, '');
+    const value = vars.get(expr);
 
     if (value !== undefined) {
       response.body = {
         result: String(value),
         variablesReference: 0
       };
-    } else {
-      response.body = {
-        result: 'undefined',
-        variablesReference: 0
-      };
     }
-
     this.sendResponse(response);
   }
 
