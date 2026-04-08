@@ -70,6 +70,7 @@ export class LogoDebugSession extends DebugSession {
       this.sourceLines = source.split('\n');
       this.runtime.setDebugMode(true);
       this.runtime.loadProgram(source, args.program);
+      this.runtime.setBreakpoints(this.breakpoints.get(this.currentSourceFile) || []);
 
       // Set up callback for PRINT output – send as custom event so
       // the extension can route it to the dedicated LOGO terminal.
@@ -112,13 +113,11 @@ export class LogoDebugSession extends DebugSession {
     response: DebugProtocol.SetBreakpointsResponse,
     args: DebugProtocol.SetBreakpointsArguments
   ): void {
-    const path = args.source.path as string;
+    const sourcePath = args.source.path as string;
     const clientLines = args.lines || [];
 
-    this.breakpoints.set(path, clientLines);
-    
-    // Update runtime breakpoints
-    this.runtime.setBreakpoints(clientLines);
+    this.breakpoints.set(sourcePath, clientLines);
+    this.runtime.setBreakpoints(this.breakpoints.get(this.currentSourceFile) || []);
 
     const breakpoints = clientLines.map(line => {
       const bp: DebugProtocol.Breakpoint = new Breakpoint(true, line);
@@ -145,7 +144,7 @@ export class LogoDebugSession extends DebugSession {
     args: DebugProtocol.StackTraceArguments
   ): void {
     const callStack = this.runtime.getCallStack();
-    const currentLine = this.runtime.getCurrentLine();
+    const currentLocation = this.runtime.getCurrentLocation();
 
     const frames: StackFrame[] = [];
 
@@ -153,15 +152,17 @@ export class LogoDebugSession extends DebugSession {
     if (callStack.length > 0) {
       // callStack is already callee-first (deepest frame first from getCallStack)
       callStack.forEach((frame, index) => {
+        const frameSourcePath = index === 0 ? currentLocation.sourcePath : frame.sourcePath;
+        const frameLine = index === 0 ? currentLocation.line : frame.line;
         frames.push(
           new StackFrame(
             index,
             frame.procedure,
             new Source(
-              path.basename(this.currentSourceFile),
-              this.currentSourceFile
+              path.basename(frameSourcePath),
+              frameSourcePath
             ),
-            index === 0 ? currentLine : frame.line,
+            frameLine,
             0
           )
         );
@@ -172,10 +173,10 @@ export class LogoDebugSession extends DebugSession {
           0,
           'main',
           new Source(
-            path.basename(this.currentSourceFile),
-            this.currentSourceFile
+            path.basename(currentLocation.sourcePath),
+            currentLocation.sourcePath
           ),
-          currentLine,
+          currentLocation.line,
           0
         )
       );
@@ -328,7 +329,8 @@ export class LogoDebugSession extends DebugSession {
       steppedBack = true;
       
       // Check if this line has a breakpoint
-      if (breakpoints.includes(previousState.currentLine)) {
+      if (previousState.currentSourcePath === sourceFile &&
+          breakpoints.includes(previousState.currentLine)) {
         // Found a breakpoint, stop here
         break;
       }
