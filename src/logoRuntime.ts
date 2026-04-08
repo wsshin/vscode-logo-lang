@@ -1215,8 +1215,7 @@ export class LogoRuntime {
 
       // If the user requested a 'stepIn' from the call site, pause at the procedure entry now
       // We do this after argument binding and after pushing the call frame so the stack reflects the entry
-      if ((!this.debugMode || proc.sourcePath === this.rootSourcePath) &&
-          this.stepMode === 'stepIn' &&
+      if (this.stepMode === 'stepIn' &&
           typeof callSiteLine === 'number' &&
           this.lastSteppedLine === callSiteLine) {
         // Pause at procedure definition line
@@ -1249,10 +1248,8 @@ export class LogoRuntime {
     // pause check on the resume line (one-shot) so we reach the nested REPEAT.
     let skipResumeLinePause = isResuming && resumeBodyIndex !== null && ((this as any)._pausedRepeatStates && (this as any)._pausedRepeatStates.length > 0);
 
-    const opaqueProcedure = this.debugMode && proc.sourcePath !== this.rootSourcePath;
-
     try {
-      await this.runOpaqueIfNeeded(opaqueProcedure, async () => {
+      await this.runOpaqueIfNeeded(false, async () => {
         while (j < proc.body.length && !this.stopExecution && !this.pauseRequested) {
         const currentLineNum = j < proc.body.length ? proc.body[j].line : -1;
 
@@ -1587,7 +1584,7 @@ export class LogoRuntime {
     try {
       this.parse(source, normalizedPath);
       const loadedTokens = this.tokenize(source, normalizedPath);
-      const opaqueLoadedExecution = this.debugMode;
+      const opaqueLoadedExecution = this.debugMode && this.stepMode === 'stepOver';
       await this.runOpaqueIfNeeded(opaqueLoadedExecution, async () => {
         let index = 0;
         while (index < loadedTokens.length && !this.stopExecution) {
