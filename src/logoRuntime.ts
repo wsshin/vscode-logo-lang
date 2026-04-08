@@ -319,8 +319,10 @@ export class LogoRuntime {
       return await fn();
     } finally {
       this.opaqueExecutionDepth = Math.max(0, this.opaqueExecutionDepth - 1);
-      this.currentLine = previousLine;
-      this.currentSourcePath = previousSourcePath;
+      if (!this.pauseRequested) {
+        this.currentLine = previousLine;
+        this.currentSourcePath = previousSourcePath;
+      }
     }
   }
 
@@ -347,6 +349,17 @@ export class LogoRuntime {
     }
 
     return false;
+  }
+
+  private savePausedLoadState(targetPath: string, tokens: LogoToken[], index: number): void {
+    const states: Array<{ targetPath: string; tokens: LogoToken[]; index: number }> =
+      (this as any)._pausedLoadStates || [];
+    const existingIndex = states.findIndex(state => state.targetPath === targetPath);
+    if (existingIndex !== -1) {
+      states.splice(existingIndex, 1);
+    }
+    states.push({ targetPath, tokens, index });
+    (this as any)._pausedLoadStates = states;
   }
 
   private async pauseExecution(): Promise<void> {
@@ -491,7 +504,10 @@ export class LogoRuntime {
 
         // Check if we're resuming from inside a nested construct (procedure/REPEAT).
         // If so, skip the pause check — the nested construct handles its own pausing.
-        const resumingInsideNested = ((this as any)._pausedProcStates && (this as any)._pausedProcStates.length > 0) || ((this as any)._pausedRepeatStates && (this as any)._pausedRepeatStates.length > 0);
+        const resumingInsideNested =
+          ((this as any)._pausedProcStates && (this as any)._pausedProcStates.length > 0) ||
+          ((this as any)._pausedRepeatStates && (this as any)._pausedRepeatStates.length > 0) ||
+          ((this as any)._pausedLoadStates && (this as any)._pausedLoadStates.length > 0);
 
         // Save state before executing (for reverse debugging)
         this.saveExecutionStateIfVisible(token.sourcePath);
@@ -1605,20 +1621,33 @@ export class LogoRuntime {
       throw new Error(`Cyclic LOAD detected: ${chain}`);
     }
 
-    let source: string;
-    try {
-      source = fs.readFileSync(normalizedPath, 'utf8');
-    } catch (error) {
-      throw new Error(`LOAD failed for ${normalizedPath}: ${error instanceof Error ? error.message : String(error)}`);
+    const pausedLoadStates: Array<{ targetPath: string; tokens: LogoToken[]; index: number }> =
+      (this as any)._pausedLoadStates || [];
+    const pausedLoadStateIndex = pausedLoadStates.findIndex(state => state.targetPath === normalizedPath);
+
+    let loadedTokens: LogoToken[];
+    let index = 0;
+    if (pausedLoadStateIndex !== -1) {
+      const pausedState = pausedLoadStates.splice(pausedLoadStateIndex, 1)[0];
+      (this as any)._pausedLoadStates = pausedLoadStates;
+      loadedTokens = pausedState.tokens;
+      index = pausedState.index;
+    } else {
+      let source: string;
+      try {
+        source = fs.readFileSync(normalizedPath, 'utf8');
+      } catch (error) {
+        throw new Error(`LOAD failed for ${normalizedPath}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+
+      this.parse(source, normalizedPath);
+      loadedTokens = this.tokenize(source, normalizedPath);
     }
 
     this.activeLoadStack.push(normalizedPath);
     try {
-      this.parse(source, normalizedPath);
-      const loadedTokens = this.tokenize(source, normalizedPath);
       const opaqueLoadedExecution = this.debugMode && this.stepMode === 'stepOver';
       await this.runOpaqueIfNeeded(opaqueLoadedExecution, async () => {
-        let index = 0;
         while (index < loadedTokens.length && !this.stopExecution) {
           const token = loadedTokens[index];
           if (token.value.toUpperCase() === 'TO') {
@@ -1634,12 +1663,29 @@ export class LogoRuntime {
           }
 
           const currentLineNum = token.line;
-          while (index < loadedTokens.length &&
-                 !this.stopExecution &&
-                 loadedTokens[index].line === currentLineNum) {
-            const result = await this.executeCommand(loadedTokens, index);
-            index = result.nextIndex;
+          this.setCurrentLocation(currentLineNum, token.sourcePath);
+          this.saveExecutionStateIfVisible(token.sourcePath);
+          if (this.shouldPauseAtLine(token.sourcePath)) {
+            this.savePausedLoadState(normalizedPath, loadedTokens, index);
+            this.pauseRequested = true;
+            await this.pauseExecution();
+            throw new PauseException();
           }
+
+          try {
+            while (index < loadedTokens.length &&
+                   !this.stopExecution &&
+                   loadedTokens[index].line === currentLineNum) {
+              const result = await this.executeCommand(loadedTokens, index);
+              index = result.nextIndex;
+            }
+          } catch (e) {
+            if (e instanceof PauseException) {
+              this.savePausedLoadState(normalizedPath, loadedTokens, index);
+            }
+            throw e;
+          }
+          this.lastSteppedLine = -1;
         }
       });
     } finally {
