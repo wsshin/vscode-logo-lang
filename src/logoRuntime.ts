@@ -1533,6 +1533,14 @@ export class LogoRuntime {
     }
 
     const token = tokens[startIndex];
+    if (token.value === '+' || token.value === '-') {
+      const operand = await this.parsePrimary(tokens, startIndex + 1);
+      const numericOperand = this.asNumber(operand.value);
+      return {
+        value: token.value === '-' ? -numericOperand : numericOperand,
+        nextIndex: operand.nextIndex
+      };
+    }
 
     // Number literal
     if (/^-?[0-9]+(\.[0-9]+)?$/.test(token.value)) {
