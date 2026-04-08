@@ -1448,30 +1448,76 @@ export class LogoRuntime {
     tokens: LogoToken[],
     startIndex: number
   ): Promise<{ value: LogoValue; nextIndex: number }> {
-    // Parse left-to-right so operators are left-associative.
-    let left = await this.parsePrimary(tokens, startIndex);
+    return this.parseComparison(tokens, startIndex);
+  }
+
+  private async parseComparison(
+    tokens: LogoToken[],
+    startIndex: number
+  ): Promise<{ value: LogoValue; nextIndex: number }> {
+    let left = await this.parseAdditive(tokens, startIndex);
 
     while (left.nextIndex < tokens.length) {
       const op = tokens[left.nextIndex].value;
-      if (!['+', '-', '*', '/', '=', '<', '>'].includes(op)) {
+      if (!['=', '<', '>'].includes(op)) {
         break;
       }
 
-      const right = await this.parsePrimary(tokens, left.nextIndex + 1);
+      const right = await this.parseAdditive(tokens, left.nextIndex + 1);
 
       let result = 0;
       const leftNumber = this.asNumber(left.value);
       const rightNumber = this.asNumber(right.value);
       switch (op) {
-        case '+': result = leftNumber + rightNumber; break;
-        case '-': result = leftNumber - rightNumber; break;
-        case '*': result = leftNumber * rightNumber; break;
-        case '/': result = rightNumber !== 0 ? leftNumber / rightNumber : 0; break;
         case '=': result = left.value === right.value ? 1 : 0; break;
         case '<': result = leftNumber < rightNumber ? 1 : 0; break;
         case '>': result = leftNumber > rightNumber ? 1 : 0; break;
       }
 
+      left = { value: result, nextIndex: right.nextIndex };
+    }
+
+    return left;
+  }
+
+  private async parseAdditive(
+    tokens: LogoToken[],
+    startIndex: number
+  ): Promise<{ value: LogoValue; nextIndex: number }> {
+    let left = await this.parseMultiplicative(tokens, startIndex);
+
+    while (left.nextIndex < tokens.length) {
+      const op = tokens[left.nextIndex].value;
+      if (!['+', '-'].includes(op)) {
+        break;
+      }
+
+      const right = await this.parseMultiplicative(tokens, left.nextIndex + 1);
+      const leftNumber = this.asNumber(left.value);
+      const rightNumber = this.asNumber(right.value);
+      const result = op === '+' ? leftNumber + rightNumber : leftNumber - rightNumber;
+      left = { value: result, nextIndex: right.nextIndex };
+    }
+
+    return left;
+  }
+
+  private async parseMultiplicative(
+    tokens: LogoToken[],
+    startIndex: number
+  ): Promise<{ value: LogoValue; nextIndex: number }> {
+    let left = await this.parsePrimary(tokens, startIndex);
+
+    while (left.nextIndex < tokens.length) {
+      const op = tokens[left.nextIndex].value;
+      if (!['*', '/'].includes(op)) {
+        break;
+      }
+
+      const right = await this.parsePrimary(tokens, left.nextIndex + 1);
+      const leftNumber = this.asNumber(left.value);
+      const rightNumber = this.asNumber(right.value);
+      const result = op === '*' ? leftNumber * rightNumber : (rightNumber !== 0 ? leftNumber / rightNumber : 0);
       left = { value: result, nextIndex: right.nextIndex };
     }
 
