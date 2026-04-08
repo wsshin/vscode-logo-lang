@@ -1,4 +1,6 @@
 // Simple Logo diagnostics analyzer (no vscode dependency)
+import * as fs from 'fs';
+import * as path from 'path';
 
 export type Severity = 'error' | 'warning';
 
@@ -10,7 +12,56 @@ export interface DiagnosticItem {
   message: string;
 }
 
-export function analyzeSource(source: string): DiagnosticItem[] {
+function collectLoadedProcedureNames(source: string, currentFilePath?: string, visited: Set<string> = new Set()): Set<string> {
+  const names = new Set<string>();
+  const lines = source.split('\n');
+  const tokenRegex = /\bTO\b|\b[A-Za-z_][A-Za-z0-9_]*\b/gi;
+
+  for (const line of lines) {
+    const commentIndex = line.indexOf(';');
+    const codePart = commentIndex === -1 ? line : line.substring(0, commentIndex);
+
+    let match: RegExpExecArray | null;
+    tokenRegex.lastIndex = 0;
+    while ((match = tokenRegex.exec(codePart)) !== null) {
+      if (/^TO$/i.test(match[0])) {
+        const rest = codePart.substring(tokenRegex.lastIndex);
+        const nameMatch = /^\s*([A-Za-z_][A-Za-z0-9_]*)/i.exec(rest);
+        if (nameMatch) {
+          names.add(nameMatch[1].toUpperCase());
+        }
+      }
+    }
+
+    if (!currentFilePath) {
+      continue;
+    }
+
+    const loadMatch = /^\s*LOAD\s+("([^\s\[\]\(\)]+))/i.exec(codePart);
+    if (!loadMatch) {
+      continue;
+    }
+
+    const target = loadMatch[2];
+    const resolvedPath = path.isAbsolute(target)
+      ? path.normalize(target)
+      : path.resolve(path.dirname(currentFilePath), target);
+
+    if (visited.has(resolvedPath) || !fs.existsSync(resolvedPath)) {
+      continue;
+    }
+
+    visited.add(resolvedPath);
+    const nestedSource = fs.readFileSync(resolvedPath, 'utf8');
+    for (const nestedName of collectLoadedProcedureNames(nestedSource, resolvedPath, visited)) {
+      names.add(nestedName);
+    }
+  }
+
+  return names;
+}
+
+export function analyzeSource(source: string, currentFilePath?: string): DiagnosticItem[] {
   const diagnostics: DiagnosticItem[] = [];
   const lines = source.split('\n');
 
@@ -221,12 +272,18 @@ export function analyzeSource(source: string): DiagnosticItem[] {
     push(p.line, p.col, 2, 'error', 'Missing END for procedure');
   }
 
+  const loadedProcNames = collectLoadedProcedureNames(source, currentFilePath);
+  const knownProcNames = new Set<string>([
+    ...procNames.keys(),
+    ...loadedProcNames
+  ]);
+
   // ----- Unsupported command warnings -----
   // Supported command set (upper-case)
   const supported = new Set<string>([
     'FD','FORWARD','BK','BACK','BACKWARD','RT','RIGHT','LT','LEFT','ARC','SETH','SETHEADING',
     'PU','PENUP','PD','PENDOWN','CS','CLEARSCREEN','CLEAN','HOME','SETPOS','HT','HIDETURTLE','ST','SHOWTURTLE','SETPENCOLOR','SETPC',
-    'REPEAT','IF','IFELSE','STOP','MAKE','RANDOM',
+    'REPEAT','IF','IFELSE','STOP','MAKE','RANDOM','LOAD',
     'PRINT','PR'
   ]);
 
@@ -246,7 +303,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
 
       // Skip known keywords, procedure definitions, and procedure names
       if (up === 'TO' || up === 'END') continue;
-      if (procNames.has(up)) continue;
+      if (knownProcNames.has(up)) continue;
 
       // Basic parameter validation for some common commands
       const parts = codePart.trim().split(/\s+/);
@@ -344,6 +401,25 @@ export function analyzeSource(source: string): DiagnosticItem[] {
         }
       }
 
+      if (up === 'LOAD') {
+        const arg2 = parts.length > 2 ? parts[2] : null;
+        if (!arg) {
+          push(li, tokenStart, token.length, 'error', 'LOAD expects 1 argument');
+        } else if (arg2) {
+          push(li, tokenStart, token.length, 'error', 'LOAD expects exactly 1 argument');
+        } else if (!/^"/.test(arg) && !/^:[A-Za-z_][A-Za-z0-9_]*$/.test(arg)) {
+          push(li, tokenStart, token.length, 'error', 'LOAD expects a quoted filename or filename variable');
+        } else if (/^"/.test(arg) && currentFilePath) {
+          const target = arg.substring(1);
+          const resolvedPath = path.isAbsolute(target)
+            ? path.normalize(target)
+            : path.resolve(path.dirname(currentFilePath), target);
+          if (!fs.existsSync(resolvedPath)) {
+            push(li, tokenStart, token.length, 'warning', `LOAD target not found: ${target}`);
+          }
+        }
+      }
+
       if (up === 'RANDOM') {
         if (!arg) {
           push(li, tokenStart, token.length, 'error', `${token.toUpperCase()} expects 1 argument`);
@@ -351,7 +427,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
       }
 
       // Unsupported command warning (only if not a supported command or known proc)
-      if (!supported.has(up) && !procNames.has(up) && up !== 'TO' && up !== 'END') {
+      if (!supported.has(up) && !knownProcNames.has(up) && up !== 'TO' && up !== 'END') {
         push(li, tokenStart, token.length, 'warning', `Unsupported command '${token}'`);
       }
     }
@@ -378,7 +454,7 @@ export function analyzeSource(source: string): DiagnosticItem[] {
           const token = m2[1];
           const tokenStart = br + 1 + m2.index + (m2[0].indexOf(token));
           const up = token.toUpperCase();
-          if (!supported.has(up) && !procNames.has(up) && up !== 'TO' && up !== 'END') {
+          if (!supported.has(up) && !knownProcNames.has(up) && up !== 'TO' && up !== 'END') {
             push(li, tokenStart, token.length, 'warning', `Unsupported command '${token}'`);
           }
         }
