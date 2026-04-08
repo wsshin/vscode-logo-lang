@@ -26,6 +26,7 @@ export class LogoCompletionProvider implements vscode.CompletionItemProvider {
       { label: 'IFELSE', detail: 'Conditional with true and false branches', kind: vscode.CompletionItemKind.Keyword },
       { label: 'STOP', detail: 'Stop execution', kind: vscode.CompletionItemKind.Keyword },
       { label: 'MAKE', detail: 'Assign variable value', kind: vscode.CompletionItemKind.Keyword },
+      { label: 'LOAD', detail: 'Load and execute another Logo file', kind: vscode.CompletionItemKind.Keyword },
     ];
 
     // Turtle movement commands
