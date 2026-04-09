@@ -2,7 +2,7 @@
   "name": "logo-lang",
   "displayName": "Logo Language",
   "description": "Logo Language Interpreter and Debugger",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "publisher": "zion-school",
   "icon": "images/logo-icon.png",
   "repository": {

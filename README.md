@@ -37,6 +37,10 @@ Standalone VSCode extension with interpreter and debugger for the Logo programmi
 - `IF condition [commands]` - Conditional execution
 - `IFELSE condition [true-commands] [false-commands]` - Conditional execution with two branches
 - `LOAD "path.logo` / `LOAD :filename` - Load and execute another Logo file
+  - Loaded files are executed immediately
+  - Procedures defined in loaded files become available to the current program
+  - Relative paths are resolved from the file containing the `LOAD` command
+  - Repeated `LOAD` commands re-execute the target file 
 - `TO name :param1 :param2 ... END` - Define procedures
 
 ### Variables and Expressions
@@ -52,13 +56,6 @@ Standalone VSCode extension with interpreter and debugger for the Logo programmi
 ## Additional Commands
 - `ARC` - Move along an arc
 - `PRINT` / `PR` - Print a value to the output
-
-## LOAD Notes
-- Loaded files are read from disk and executed immediately.
-- Procedures defined in loaded files become available to the current program.
-- Relative paths are resolved from the file containing the `LOAD` command.
-- Repeated `LOAD` commands re-execute the target file.
-- In debugging, you can step into loaded files and set breakpoints in them.
 
 ## Usage
 
