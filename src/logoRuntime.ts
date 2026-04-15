@@ -285,6 +285,17 @@ export class LogoRuntime {
     }
   }
 
+  private hasPausedState(stackName: string): boolean {
+    const states: any[] = (this as any)[stackName] || [];
+    return states.length > 0;
+  }
+
+  private hasNestedResumeState(): boolean {
+    return this.hasPausedState('_pausedProcStates') ||
+      this.hasPausedState('_pausedRepeatStates') ||
+      this.hasPausedState('_pausedLoadStates');
+  }
+
   private shouldPauseAtLine(sourcePath: string): boolean {
     const isNewLocation = this.currentLine !== this.lastSteppedLine ||
       sourcePath !== this.lastSteppedSourcePath;
@@ -504,10 +515,7 @@ export class LogoRuntime {
 
         // Check if we're resuming from inside a nested construct (procedure/REPEAT).
         // If so, skip the pause check — the nested construct handles its own pausing.
-        const resumingInsideNested =
-          ((this as any)._pausedProcStates && (this as any)._pausedProcStates.length > 0) ||
-          ((this as any)._pausedRepeatStates && (this as any)._pausedRepeatStates.length > 0) ||
-          ((this as any)._pausedLoadStates && (this as any)._pausedLoadStates.length > 0);
+        const resumingInsideNested = this.hasNestedResumeState();
 
         // Save state before executing (for reverse debugging)
         this.saveExecutionStateIfVisible(token.sourcePath);
@@ -1294,7 +1302,9 @@ export class LogoRuntime {
     let pausedException: PauseException | null = null;
     // When resuming and there's a paused repeat state to pass through, skip the
     // pause check on the resume line (one-shot) so we reach the nested REPEAT.
-    let skipResumeLinePause = isResuming && resumeBodyIndex !== null && ((this as any)._pausedRepeatStates && (this as any)._pausedRepeatStates.length > 0);
+    let skipResumeLinePause = isResuming &&
+      resumeBodyIndex !== null &&
+      this.hasPausedState('_pausedRepeatStates');
 
     try {
       await this.runOpaqueIfNeeded(false, async () => {
@@ -1310,7 +1320,7 @@ export class LogoRuntime {
           // When there are deeper paused procedure states in the stack, we're "passing through"
           // this procedure to reach the actual paused location — suppress all pause checks.
           // Also suppress once when passing through a resume line to reach a paused REPEAT.
-          const passingThrough = ((this as any)._pausedProcStates && (this as any)._pausedProcStates.length > 0) || skipResumeLinePause;
+          const passingThrough = this.hasPausedState('_pausedProcStates') || skipResumeLinePause;
           if (skipResumeLinePause) skipResumeLinePause = false;
           if (!passingThrough && this.shouldPauseAtLine(proc.body[j].sourcePath)) {
             this.pauseRequested = true;
@@ -1744,7 +1754,8 @@ export class LogoRuntime {
           const currentLineNum = token.line;
           this.setCurrentLocation(currentLineNum, token.sourcePath);
           this.saveExecutionStateIfVisible(token.sourcePath);
-          if (this.shouldPauseAtLine(token.sourcePath)) {
+          const resumingInsideNested = this.hasNestedResumeState();
+          if (!resumingInsideNested && this.shouldPauseAtLine(token.sourcePath)) {
             this.savePausedLoadState(normalizedPath, loadedTokens, index);
             this.pauseRequested = true;
             await this.pauseExecution();
