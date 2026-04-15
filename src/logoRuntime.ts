@@ -294,7 +294,8 @@ export class LogoRuntime {
     return this.hasPausedState('_pausedProcStates') ||
       this.hasPausedState('_pausedRepeatStates') ||
       this.hasPausedState('_pausedLoadStates') ||
-      this.hasPausedState('_pausedIfStates');
+      this.hasPausedState('_pausedIfStates') ||
+      this.hasPausedState('_pausedIfElseStates');
   }
 
   private shouldPauseAtLine(sourcePath: string): boolean {
@@ -1180,6 +1181,25 @@ export class LogoRuntime {
     tokens: LogoToken[],
     startIndex: number
   ): Promise<{ nextIndex: number }> {
+    const ifElseLine = tokens[startIndex].line;
+    const ifElseSourcePath = tokens[startIndex].sourcePath;
+    const pausedStates: any[] = (this as any)._pausedIfElseStates || [];
+    const pausedStateIndex = pausedStates.findIndex((state: any) =>
+      state.sourcePath === ifElseSourcePath &&
+      state.line === ifElseLine &&
+      state.startIndex === startIndex
+    );
+    let resumeJ: number | null = null;
+    let resumeBlockStart: number | null = null;
+    let resumeBlockEnd: number | null = null;
+    if (pausedStateIndex !== -1) {
+      const pausedState = pausedStates.splice(pausedStateIndex, 1)[0];
+      (this as any)._pausedIfElseStates = pausedStates;
+      resumeJ = pausedState.j;
+      resumeBlockStart = pausedState.blockStart;
+      resumeBlockEnd = pausedState.blockEnd;
+    }
+
     const condition = await this.evaluateExpression(tokens, startIndex + 1);
     let i = condition.nextIndex;
 
@@ -1217,11 +1237,12 @@ export class LogoRuntime {
 
     const falseBlockEnd = i - 1;
 
-    const blockStart = this.asNumber(condition.value) !== 0 ? trueBlockStart : falseBlockStart;
-    const blockEnd = this.asNumber(condition.value) !== 0 ? trueBlockEnd : falseBlockEnd;
+    const defaultBlockStart = this.asNumber(condition.value) !== 0 ? trueBlockStart : falseBlockStart;
+    const defaultBlockEnd = this.asNumber(condition.value) !== 0 ? trueBlockEnd : falseBlockEnd;
+    const blockStart = resumeBlockStart ?? defaultBlockStart;
+    const blockEnd = resumeBlockEnd ?? defaultBlockEnd;
 
     // Determine if this is a single-line IFELSE block
-    const ifElseLine = tokens[startIndex].line;
     let isSingleLine = true;
     for (let j = blockStart; j < blockEnd; j++) {
       if (tokens[j].line !== ifElseLine) {
@@ -1235,8 +1256,9 @@ export class LogoRuntime {
       this.insideSingleLineBlock = true;
     }
 
-    let j = blockStart;
+    let j = resumeJ ?? blockStart;
     let lastLineInBlock = -1;
+    let skipResumeLinePause = resumeJ !== null;
 
     while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
       // Get the current line number
@@ -1251,7 +1273,29 @@ export class LogoRuntime {
         this.saveExecutionStateIfVisible(tokens[j].sourcePath);
 
         // Check if we should pause (skip if on same line we just paused at)
-        if (this.shouldPauseAtLine(tokens[j].sourcePath)) {
+        const passingThrough = this.hasNestedResumeState() || skipResumeLinePause;
+        if (skipResumeLinePause) {
+          skipResumeLinePause = false;
+        }
+        if (!passingThrough && this.shouldPauseAtLine(tokens[j].sourcePath)) {
+          const states: any[] = (this as any)._pausedIfElseStates || [];
+          const existingIndex = states.findIndex((state: any) =>
+            state.sourcePath === ifElseSourcePath &&
+            state.line === ifElseLine &&
+            state.startIndex === startIndex
+          );
+          if (existingIndex !== -1) {
+            states.splice(existingIndex, 1);
+          }
+          states.unshift({
+            sourcePath: ifElseSourcePath,
+            line: ifElseLine,
+            startIndex,
+            blockStart,
+            blockEnd,
+            j
+          });
+          (this as any)._pausedIfElseStates = states;
           this.insideSingleLineBlock = false;
           this.pauseRequested = true;
           await this.pauseExecution();
@@ -1260,17 +1304,45 @@ export class LogoRuntime {
       }
 
       // Execute all commands on this line
-      while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
-        const tokenLine = tokens[j].line;
+      try {
+        while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
+          const tokenLine = tokens[j].line;
 
-        // If we've moved to a different line, break to trigger pause check
-        if (tokenLine !== currentLineNum) {
-          break;
+          // If we've moved to a different line, break to trigger pause check
+          if (tokenLine !== currentLineNum) {
+            break;
+          }
+
+          this.setCurrentLocation(tokenLine, tokens[j].sourcePath);
+          const result = await this.executeCommand(tokens, j);
+          j = result.nextIndex;
         }
-
-        this.setCurrentLocation(tokenLine, tokens[j].sourcePath);
-        const result = await this.executeCommand(tokens, j);
-        j = result.nextIndex;
+      } catch (e) {
+        if (e instanceof PauseException) {
+          if (typeof (this as any)._stepOutNextIndex === 'number') {
+            j = (this as any)._stepOutNextIndex;
+            delete (this as any)._stepOutNextIndex;
+          }
+          const states: any[] = (this as any)._pausedIfElseStates || [];
+          const existingIndex = states.findIndex((state: any) =>
+            state.sourcePath === ifElseSourcePath &&
+            state.line === ifElseLine &&
+            state.startIndex === startIndex
+          );
+          if (existingIndex !== -1) {
+            states.splice(existingIndex, 1);
+          }
+          states.unshift({
+            sourcePath: ifElseSourcePath,
+            line: ifElseLine,
+            startIndex,
+            blockStart,
+            blockEnd,
+            j
+          });
+          (this as any)._pausedIfElseStates = states;
+        }
+        throw e;
       }
       // Line done — clear so breakpoints re-trigger on revisit
       this.lastSteppedLine = -1;
@@ -1278,6 +1350,17 @@ export class LogoRuntime {
 
     // Clear single-line block flag
     this.insideSingleLineBlock = false;
+
+    const states: any[] = (this as any)._pausedIfElseStates || [];
+    const existingIndex = states.findIndex((state: any) =>
+      state.sourcePath === ifElseSourcePath &&
+      state.line === ifElseLine &&
+      state.startIndex === startIndex
+    );
+    if (existingIndex !== -1) {
+      states.splice(existingIndex, 1);
+      (this as any)._pausedIfElseStates = states;
+    }
 
     return { nextIndex: i };
   }
@@ -1379,7 +1462,9 @@ export class LogoRuntime {
       resumeBodyIndex !== null &&
       (
         this.hasPausedState('_pausedRepeatStates') ||
-        this.hasPausedState('_pausedIfStates')
+        this.hasPausedState('_pausedLoadStates') ||
+        this.hasPausedState('_pausedIfStates') ||
+        this.hasPausedState('_pausedIfElseStates')
       );
 
     try {
