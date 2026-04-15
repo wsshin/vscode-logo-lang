@@ -293,7 +293,8 @@ export class LogoRuntime {
   private hasNestedResumeState(): boolean {
     return this.hasPausedState('_pausedProcStates') ||
       this.hasPausedState('_pausedRepeatStates') ||
-      this.hasPausedState('_pausedLoadStates');
+      this.hasPausedState('_pausedLoadStates') ||
+      this.hasPausedState('_pausedIfStates');
   }
 
   private shouldPauseAtLine(sourcePath: string): boolean {
@@ -1018,6 +1019,21 @@ export class LogoRuntime {
     tokens: LogoToken[],
     startIndex: number
   ): Promise<{ nextIndex: number }> {
+    const ifLine = tokens[startIndex].line;
+    const ifSourcePath = tokens[startIndex].sourcePath;
+    const pausedStates: any[] = (this as any)._pausedIfStates || [];
+    const pausedStateIndex = pausedStates.findIndex((state: any) =>
+      state.sourcePath === ifSourcePath &&
+      state.line === ifLine &&
+      state.startIndex === startIndex
+    );
+    let resumeJ: number | null = null;
+    if (pausedStateIndex !== -1) {
+      const pausedState = pausedStates.splice(pausedStateIndex, 1)[0];
+      (this as any)._pausedIfStates = pausedStates;
+      resumeJ = pausedState.j;
+    }
+
     const condition = await this.evaluateExpression(tokens, startIndex + 1);
     let i = condition.nextIndex;
 
@@ -1039,7 +1055,6 @@ export class LogoRuntime {
     const blockEnd = i - 1;
 
     // Determine if this is a single-line IF block
-    const ifLine = tokens[startIndex].line;
     let isSingleLine = true;
     for (let j = blockStart; j < blockEnd; j++) {
       if (tokens[j].line !== ifLine) {
@@ -1055,8 +1070,9 @@ export class LogoRuntime {
 
     // Execute the block if condition is true (non-zero)
     if (this.asNumber(condition.value) !== 0) {
-      let j = blockStart;
+      let j = resumeJ ?? blockStart;
       let lastLineInBlock = -1;
+      let skipResumeLinePause = resumeJ !== null;
 
       while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
         // Get the current line number
@@ -1071,7 +1087,27 @@ export class LogoRuntime {
           this.saveExecutionStateIfVisible(tokens[j].sourcePath);
 
           // Check if we should pause (skip if on same line we just paused at)
-          if (this.shouldPauseAtLine(tokens[j].sourcePath)) {
+          const passingThrough = this.hasNestedResumeState() || skipResumeLinePause;
+          if (skipResumeLinePause) {
+            skipResumeLinePause = false;
+          }
+          if (!passingThrough && this.shouldPauseAtLine(tokens[j].sourcePath)) {
+            const states: any[] = (this as any)._pausedIfStates || [];
+            const existingIndex = states.findIndex((state: any) =>
+              state.sourcePath === ifSourcePath &&
+              state.line === ifLine &&
+              state.startIndex === startIndex
+            );
+            if (existingIndex !== -1) {
+              states.splice(existingIndex, 1);
+            }
+            states.unshift({
+              sourcePath: ifSourcePath,
+              line: ifLine,
+              startIndex,
+              j
+            });
+            (this as any)._pausedIfStates = states;
             this.insideSingleLineBlock = false;
             this.pauseRequested = true;
             await this.pauseExecution();
@@ -1080,17 +1116,43 @@ export class LogoRuntime {
         }
 
         // Execute all commands on this line
-        while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
-          const tokenLine = tokens[j].line;
+        try {
+          while (j < blockEnd && !this.stopExecution && !this.pauseRequested) {
+            const tokenLine = tokens[j].line;
 
-          // If we've moved to a different line, break to trigger pause check
-          if (tokenLine !== currentLineNum) {
-            break;
+            // If we've moved to a different line, break to trigger pause check
+            if (tokenLine !== currentLineNum) {
+              break;
+            }
+
+            this.setCurrentLocation(tokenLine, tokens[j].sourcePath);
+            const result = await this.executeCommand(tokens, j);
+            j = result.nextIndex;
           }
-
-          this.setCurrentLocation(tokenLine, tokens[j].sourcePath);
-          const result = await this.executeCommand(tokens, j);
-          j = result.nextIndex;
+        } catch (e) {
+          if (e instanceof PauseException) {
+            if (typeof (this as any)._stepOutNextIndex === 'number') {
+              j = (this as any)._stepOutNextIndex;
+              delete (this as any)._stepOutNextIndex;
+            }
+            const states: any[] = (this as any)._pausedIfStates || [];
+            const existingIndex = states.findIndex((state: any) =>
+              state.sourcePath === ifSourcePath &&
+              state.line === ifLine &&
+              state.startIndex === startIndex
+            );
+            if (existingIndex !== -1) {
+              states.splice(existingIndex, 1);
+            }
+            states.unshift({
+              sourcePath: ifSourcePath,
+              line: ifLine,
+              startIndex,
+              j
+            });
+            (this as any)._pausedIfStates = states;
+          }
+          throw e;
         }
         // Line done — clear so breakpoints re-trigger on revisit
         this.lastSteppedLine = -1;
@@ -1099,6 +1161,17 @@ export class LogoRuntime {
 
     // Clear single-line block flag
     this.insideSingleLineBlock = false;
+
+    const states: any[] = (this as any)._pausedIfStates || [];
+    const existingIndex = states.findIndex((state: any) =>
+      state.sourcePath === ifSourcePath &&
+      state.line === ifLine &&
+      state.startIndex === startIndex
+    );
+    if (existingIndex !== -1) {
+      states.splice(existingIndex, 1);
+      (this as any)._pausedIfStates = states;
+    }
 
     return { nextIndex: i };
   }
@@ -1304,7 +1377,10 @@ export class LogoRuntime {
     // pause check on the resume line (one-shot) so we reach the nested REPEAT.
     let skipResumeLinePause = isResuming &&
       resumeBodyIndex !== null &&
-      this.hasPausedState('_pausedRepeatStates');
+      (
+        this.hasPausedState('_pausedRepeatStates') ||
+        this.hasPausedState('_pausedIfStates')
+      );
 
     try {
       await this.runOpaqueIfNeeded(false, async () => {
