@@ -15,7 +15,7 @@ import {
   Breakpoint
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
-import { LogoRuntime, DrawCommand } from './logoRuntime';
+import { LogoRuntime, DrawCommand } from './logoDebugger';
 import * as fs from 'fs';
 import * as path from 'path';
 

@@ -2,7 +2,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { LogoRuntime, DrawCommand } from './logoRuntime';
+import { LogoRuntime, DrawCommand } from './logoDebugger';
 import { LogoCompletionProvider } from './completionProvider';
 import { analyzeSource } from './diagnostics';
 

@@ -1,4 +1,4 @@
-import { LogoRuntime } from '../logoRuntime';
+import { LogoRuntime } from '../logoDebugger';
 
 function assert(condition: boolean, msg: string) {
   if (!condition) {

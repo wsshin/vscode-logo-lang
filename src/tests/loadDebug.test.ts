@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { LogoRuntime } from '../logoRuntime';
+import { LogoRuntime } from '../logoDebugger';
 
 // ─── helpers ────────────────────────────────────────────────────────
 let passed = 0;

@@ -1,5 +1,5 @@
 // Generate SVG files from Logo examples
-import { LogoRuntime, DrawCommand, TurtleState } from '../logoRuntime';
+import { LogoRuntime, DrawCommand, TurtleState } from '../logoDebugger';
 import * as fs from 'fs';
 import * as path from 'path';
 

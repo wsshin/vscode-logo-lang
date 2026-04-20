@@ -14,6 +14,9 @@ if [ ! -f package.json ]; then
     exit 1
 fi
 
+# Clean stale build output so the vsix contains only current artifacts.
+rm -rf out
+
 # Build the extension
 echo "Building the VSCode extension..."
 vsce package

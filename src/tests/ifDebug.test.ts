@@ -1,4 +1,4 @@
-import { LogoRuntime } from '../logoRuntime';
+import { LogoRuntime } from '../logoDebugger';
 
 // ─── helpers ────────────────────────────────────────────────────────
 let passed = 0;
