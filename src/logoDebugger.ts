@@ -541,26 +541,35 @@ export class LogoRuntime implements VariableLookup {
     const r = evalExpression(this.executionTokens, a.end, this);
     this.executionIndex = r.end;
     if (a.value === 0 || r.value === 0) return;
+
+    const center = { x: this.turtle.x, y: this.turtle.y };
+    const startAngle = this.turtle.angle;
     const segments = Math.max(1, Math.ceil(Math.abs(a.value) / 5));
     const stepAngle = a.value / segments;
-    // Signed chord length: sign(radius) flips the traversal side, matching the
-    // standard LOGO ARC convention (negative radius mirrors the arc).
-    const stepLen = 2 * r.value * Math.sin((stepAngle * Math.PI / 180) / 2);
-    const penDown = this.turtle.penDown;
+
+    const pointOnArc = (angle: number): { x: number; y: number } => {
+      const rad = angle * Math.PI / 180;
+      return {
+        x: center.x + r.value * Math.sin(rad),
+        y: center.y + r.value * Math.cos(rad),
+      };
+    };
+
+    let from = pointOnArc(startAngle);
     for (let i = 0; i < segments; i++) {
-      // Rotate half-step, move forward, rotate other half to follow the arc.
-      this.turtle.angle = normalizeAngle(this.turtle.angle + stepAngle / 2);
-      const rad = this.turtle.angle * Math.PI / 180;
-      const from = { x: this.turtle.x, y: this.turtle.y };
-      this.turtle.x += stepLen * Math.sin(rad);
-      this.turtle.y += stepLen * Math.cos(rad);
-      const to = { x: this.turtle.x, y: this.turtle.y };
-      this.drawCommands.push({
-        type: penDown ? 'line' : 'move',
-        from, to, color: this.turtle.penColor, angle: this.turtle.angle,
-      });
-      this.turtle.angle = normalizeAngle(this.turtle.angle + stepAngle / 2);
+      const to = pointOnArc(startAngle + stepAngle * (i + 1));
+      if (this.turtle.penDown) {
+        this.drawCommands.push({
+          type: 'line',
+          from,
+          to,
+          color: this.turtle.penColor,
+          angle: startAngle,
+        });
+      }
+      from = to;
     }
+    this.drawCommands.push({ type: 'move', to: center, angle: startAngle });
   }
 
   private doRepeat(): void {
